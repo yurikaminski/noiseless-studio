@@ -1,17 +1,10 @@
 import { useState, useEffect } from 'react';
 import { History } from './components/History';
+import type { HistoryItem } from './components/History';
 import { MainContent } from './components/MainContent';
 import { Settings } from './components/Settings';
 import { ProjectsView } from './components/ProjectsView';
-import { Clock, Settings2, Zap, LayoutGrid } from 'lucide-react';
-
-interface HistoryItem {
-  id: number;
-  type: 'video' | 'image';
-  title: string;
-  description: string;
-  date: string;
-}
+import { Clock, Settings2, Zap, LayoutGrid, Video, Image, X, Download } from 'lucide-react';
 
 export default function App() {
   const [mode, setMode] = useState<'quick' | 'projects'>('quick');
@@ -21,6 +14,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [creationType, setCreationType] = useState<'text-to-video' | 'text-to-image' | 'frames-to-video' | 'references-to-video' | null>(null);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [historyPreview, setHistoryPreview] = useState<HistoryItem | null>(null);
   const [settings, setSettings] = useState({
     videoModel: 'veo-3.1-generate-preview',
     imageModel: 'gemini-3.1-flash-image-preview',
@@ -42,6 +36,7 @@ export default function App() {
           title: g.title,
           description: g.prompt,
           date: new Date(g.timestamp).toLocaleDateString(),
+          filename: g.filename,
         })));
       })
       .catch(() => {});
@@ -51,6 +46,11 @@ export default function App() {
     setCreationType(type);
     setShowSettings(true);
   };
+
+  function handleHistoryItemClick(item: HistoryItem) {
+    setHistoryPreview(item);
+    setShowHistory(false);
+  }
 
   return (
     <div className="size-full flex bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] text-white relative overflow-hidden">
@@ -90,11 +90,11 @@ export default function App() {
 
       {/* Floating Action Buttons */}
       <div className="absolute top-6 left-6 z-50 flex gap-2">
-        <button 
+        <button
           onClick={() => setShowHistory(!showHistory)}
           className={`p-3 rounded-2xl backdrop-blur-xl border transition-all ${
-            showHistory 
-              ? 'bg-white/10 border-white/20' 
+            showHistory
+              ? 'bg-white/10 border-white/20'
               : 'bg-white/5 border-white/10 hover:bg-white/10'
           }`}
         >
@@ -103,11 +103,11 @@ export default function App() {
       </div>
 
       <div className="absolute top-6 right-6 z-50">
-        <button 
+        <button
           onClick={() => setShowSettings(!showSettings)}
           className={`p-3 rounded-2xl backdrop-blur-xl border transition-all ${
-            showSettings 
-              ? 'bg-white/10 border-white/20' 
+            showSettings
+              ? 'bg-white/10 border-white/20'
               : 'bg-white/5 border-white/10 hover:bg-white/10'
           }`}
         >
@@ -118,11 +118,15 @@ export default function App() {
       {/* History Sidebar - Sliding Panel */}
       {showHistory && (
         <>
-          <div 
+          <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm z-40"
             onClick={() => setShowHistory(false)}
           />
-          <History items={historyItems} onClose={() => setShowHistory(false)} />
+          <History
+            items={historyItems}
+            onClose={() => setShowHistory(false)}
+            onItemClick={handleHistoryItemClick}
+          />
         </>
       )}
 
@@ -142,7 +146,7 @@ export default function App() {
       {/* Settings Sidebar - Sliding Panel */}
       {showSettings && (
         <>
-          <div 
+          <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm z-40"
             onClick={() => setShowSettings(false)}
           />
@@ -156,6 +160,77 @@ export default function App() {
             onClose={() => setShowSettings(false)}
           />
         </>
+      )}
+
+      {/* History Preview Modal */}
+      {historyPreview && (
+        <div
+          className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-8"
+          onClick={() => setHistoryPreview(null)}
+        >
+          <div
+            className="bg-[#0f0f0f] border border-white/10 rounded-3xl overflow-hidden max-w-2xl w-full shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-1.5 rounded-lg bg-white/5 text-white/50 shrink-0">
+                  {historyPreview.type === 'video' ? (
+                    <Video className="w-4 h-4" />
+                  ) : (
+                    <Image className="w-4 h-4" />
+                  )}
+                </div>
+                <span className="text-sm text-white/80 truncate">{historyPreview.title}</span>
+              </div>
+              <button
+                onClick={() => setHistoryPreview(null)}
+                className="p-2 hover:bg-white/10 rounded-xl transition-colors shrink-0 ml-4"
+              >
+                <X className="w-5 h-5 text-white/60" />
+              </button>
+            </div>
+
+            {/* Media */}
+            <div className="bg-black/30">
+              {historyPreview.type === 'image' ? (
+                <img
+                  src={`/uploads/${historyPreview.filename}`}
+                  alt={historyPreview.title}
+                  className="w-full max-h-[60vh] object-contain"
+                />
+              ) : (
+                <video
+                  src={`/uploads/${historyPreview.filename}`}
+                  controls
+                  autoPlay
+                  loop
+                  className="w-full max-h-[60vh]"
+                />
+              )}
+            </div>
+
+            {/* Prompt + Actions */}
+            <div className="px-6 py-4 space-y-3">
+              <div>
+                <p className="text-xs text-white/30 mb-1">Prompt</p>
+                <p className="text-sm text-white/70 leading-relaxed">{historyPreview.description}</p>
+              </div>
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-xs text-white/30">{historyPreview.date}</span>
+                <a
+                  href={`/uploads/${historyPreview.filename}`}
+                  download
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/10 rounded-xl text-xs text-white/60 hover:bg-white/10 hover:text-white transition-all"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

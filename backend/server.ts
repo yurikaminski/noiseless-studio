@@ -7,13 +7,18 @@ import { fileURLToPath } from 'url';
 import { initDb } from './db.js';
 import * as q from './query_db.js';
 import { GenerationMode } from './types.js';
-import { generateImageFromPrompt, generateImage, generateVideoForScene } from './services/geminiService.js';
+import { generateImageFromPrompt, generateImage, generateVideoForScene, enhancePrompt } from './services/geminiService.js';
 import { loadOAuthClient, getAuthUrl, exchangeCode, getConnectedClient, getConnectedEmail } from './services/authService.js';
 import * as drive from './services/driveService.js';
 import { extractSheetId, readSheets, updateDriveLink } from './services/sheetsService.js';
 import { parseXLSX, parseCSV } from './services/xlsxService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Prevent unhandled rejections from crashing the process silently
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
 
 // Runtime-overridable API key (set via /api/config/apikey)
 let runtimeApiKey: string | undefined;
@@ -91,6 +96,26 @@ app.post('/api/config/apikey', (req, res) => {
   }
   runtimeApiKey = apiKey;
   res.json({ success: true });
+});
+
+// ── Enhance Prompt ────────────────────────────────────────────────────────────
+app.post('/api/enhance-prompt', async (req, res) => {
+  const { prompt, type } = req.body;
+  const apiKey = runtimeApiKey || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    res.status(400).json({ error: 'API key not configured. Set it in Settings.' });
+    return;
+  }
+  if (!prompt) {
+    res.status(400).json({ error: 'prompt is required' });
+    return;
+  }
+  try {
+    const enhanced = await enhancePrompt(prompt, type || 'text-to-video', apiKey);
+    res.json({ enhanced });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Enhancement failed' });
+  }
 });
 
 // ── Generations ───────────────────────────────────────────────────────────────
@@ -497,6 +522,14 @@ app.post('/api/projects/:id/process/batch', async (req, res) => {
   }
 
   sendSSE(String(projectId), 'batch_done', {});
+});
+
+// ── Global Express error handler (catches async throws in Express 5) ──────────
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[express error handler]', err?.message ?? err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: err?.message || 'Internal server error' });
+  }
 });
 
 // ── Init & Start ──────────────────────────────────────────────────────────────

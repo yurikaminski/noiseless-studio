@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Sparkles, Send, Video, Image, Film, Layers, Upload, X, Loader2, Download } from 'lucide-react';
+import { Sparkles, Send, Video, Image, Film, Layers, Upload, X, Loader2, Download, RotateCcw } from 'lucide-react';
 
 interface Settings {
   videoModel: string;
@@ -29,8 +29,15 @@ interface UploadedFile {
   preview: string;
 }
 
+const STYLE_TAGS = [
+  'Photorealistic', 'Cinematic', 'Anime', 'Cyberpunk', 'Fantasy',
+  'Watercolor', 'Oil Painting', 'Neon Noir', 'Vintage', 'Sketch',
+];
+
 export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSelect, settings }: MainContentProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [originalPrompt, setOriginalPrompt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenResult | null>(null);
   const [startFrame, setStartFrame] = useState<UploadedFile | null>(null);
@@ -69,6 +76,40 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
 
   function removeReference(idx: number) {
     setReferences(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  function applyStyleTag(tag: string) {
+    setPrompt(prompt.trim() ? `${prompt.trim()}, ${tag}` : tag);
+  }
+
+  async function enhance() {
+    if (!prompt.trim() || isEnhancing) return;
+    setIsEnhancing(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/enhance-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, type: creationType || 'text-to-video' }),
+      });
+      let data: any;
+      try { data = await res.json(); } catch { throw new Error('Server returned an invalid response'); }
+      if (!res.ok) throw new Error(data?.error || 'Enhancement failed');
+      if (!data?.enhanced) throw new Error('No enhanced prompt returned');
+      setOriginalPrompt(prompt);
+      setPrompt(data.enhanced);
+    } catch (err: any) {
+      setError(err.message || 'Enhancement failed');
+    } finally {
+      setIsEnhancing(false);
+    }
+  }
+
+  function revertPrompt() {
+    if (originalPrompt !== null) {
+      setPrompt(originalPrompt);
+      setOriginalPrompt(null);
+    }
   }
 
   const canGenerate = (() => {
@@ -219,35 +260,76 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
         )}
 
         {/* Prompt input */}
-        <div className="relative group">
-          <div className="absolute -inset-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="relative bg-white/5 backdrop-blur-2xl rounded-3xl border border-white/10 p-2 shadow-2xl">
-            <div className="flex items-center gap-3 px-4">
-              <input
-                type="text"
-                placeholder={
-                  isImage
-                    ? 'Describe the image you want to create...'
-                    : 'Describe your video in detail...'
-                }
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && generate()}
-                className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder:text-white/30 py-4 text-base"
-                disabled={isGenerating}
-              />
-              <button
-                onClick={generate}
-                disabled={!canGenerate || isGenerating}
-                className="p-3 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl hover:opacity-90 transition-all shadow-lg hover:shadow-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {isGenerating ? (
-                  <Loader2 className="w-5 h-5 text-white animate-spin" />
+        <div className="space-y-3">
+          <div className="relative group">
+            <div className="absolute -inset-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="relative bg-white/5 backdrop-blur-2xl rounded-3xl border border-white/10 p-2 shadow-2xl">
+              <div className="flex items-center gap-3 px-4">
+                <input
+                  type="text"
+                  placeholder={
+                    isImage
+                      ? 'Describe the image you want to create...'
+                      : 'Describe your video in detail...'
+                  }
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && generate()}
+                  className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder:text-white/30 py-4 text-base"
+                  disabled={isGenerating}
+                />
+
+                {/* Send button */}
+                <button
+                  onClick={generate}
+                  disabled={!canGenerate || isGenerating}
+                  className="p-3 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl hover:opacity-90 transition-all shadow-lg hover:shadow-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isGenerating ? (
+                    <Loader2 className="w-5 h-5 text-white animate-spin" />
+                  ) : (
+                    <Send className="w-5 h-5 text-white" />
+                  )}
+                </button>
+
+                {/* Enhance / Revert button */}
+                {originalPrompt !== null ? (
+                  <button
+                    onClick={revertPrompt}
+                    className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-white/50 hover:text-white/80"
+                    title="Revert to original prompt"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
                 ) : (
-                  <Send className="w-5 h-5 text-white" />
+                  <button
+                    onClick={enhance}
+                    disabled={!prompt.trim() || isEnhancing || isGenerating}
+                    className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 transition-all text-purple-400 hover:text-purple-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Enhance prompt with AI"
+                  >
+                    {isEnhancing ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-4 h-4" />
+                    )}
+                  </button>
                 )}
-              </button>
+              </div>
             </div>
+          </div>
+
+          {/* Style Tags */}
+          <div className="flex flex-wrap gap-2 justify-center px-1">
+            {STYLE_TAGS.map(tag => (
+              <button
+                key={tag}
+                onClick={() => applyStyleTag(tag)}
+                className="px-3 py-1.5 rounded-full border border-white/10 bg-white/5 text-xs text-white/50 hover:bg-purple-500/10 hover:text-white/80 hover:border-purple-500/30 transition-all"
+              >
+                {tag}
+              </button>
+            ))}
           </div>
         </div>
 
