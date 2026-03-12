@@ -149,7 +149,8 @@ export async function generateVideoForScene(params: GenerateVideoParams, apiKey:
       };
     }
     if (params.endFrameBuffer) {
-      payload.config.lastFrame = {
+      // The correct field name in @google/genai SDK v1.x is `endImage` (not `lastFrame`)
+      payload.config.endImage = {
         imageBytes: params.endFrameBuffer.toString('base64'),
         mimeType: params.endFrameMimeType || 'image/png',
       };
@@ -163,12 +164,23 @@ export async function generateVideoForScene(params: GenerateVideoParams, apiKey:
     operation = await (ai.operations as any).getVideosOperation({ operation });
   }
 
-  if (!operation?.response?.generatedVideos?.length) {
-    throw new Error('No videos generated.');
+  // Check for operation-level error (e.g. quota exceeded, policy rejection)
+  const opError = (operation as any).error;
+  if (opError) {
+    throw new Error(`Video generation failed: ${opError.message || JSON.stringify(opError)}`);
   }
 
-  const videoUri = operation.response.generatedVideos[0]?.video?.uri;
-  if (!videoUri) throw new Error('Generated video has no URI.');
+  const opResponse = operation?.response as any;
+  // @google/genai SDK may use either `generatedVideos` or `videos` depending on version
+  const videos: any[] = opResponse?.generatedVideos ?? opResponse?.videos ?? [];
+
+  if (!videos.length) {
+    console.error('[gemini] operation completed with no videos. Full response:', JSON.stringify(opResponse));
+    throw new Error('No videos generated. The prompt or images may have been filtered by the API safety policy.');
+  }
+
+  const videoUri = videos[0]?.video?.uri;
+  if (!videoUri) throw new Error('Generated video has no URI. Response: ' + JSON.stringify(videos[0]));
 
   const url = decodeURIComponent(videoUri);
   const res = await fetch(`${url}&key=${apiKey}`);
