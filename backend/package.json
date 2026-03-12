@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch server.ts",
-    "start": "node --experimental-specifier-resolution=node server.ts",
+    "start": "tsx server.ts",
     "build": "tsc"
   },
   "dependencies": {

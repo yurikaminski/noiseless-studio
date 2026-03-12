@@ -23,8 +23,24 @@ const PORT = parseInt(process.env.PORT || '3001');
 
 app.use(express.json());
 
-// Uploads dir
-const uploadsDir = path.join(__dirname, 'uploads');
+// CORS — allow Vercel frontend (and localhost during dev)
+app.use((req, res, next) => {
+  const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+    .split(',')
+    .map(o => o.trim());
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.some(a => origin === a || origin.startsWith(a))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
+  next();
+});
+
+// Uploads dir — in production set DATA_DIR=/data (Railway volume), falls back locally
+const uploadsDir = path.join(process.env.DATA_DIR || __dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 // Multer setup

@@ -5,9 +5,13 @@ import { open } from 'sqlite';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// In production (Railway) set DATA_DIR=/data (persistent volume).
+// Locally falls back to the backend directory — no change needed.
+const dataDir = process.env.DATA_DIR || __dirname;
+
 export async function openDb() {
   return open({
-    filename: path.join(__dirname, 'database.sqlite'),
+    filename: path.join(dataDir, 'database.sqlite'),
     driver: sqlite3.Database,
   });
 }
@@ -33,7 +37,7 @@ export async function initDb() {
       drive_parent_folder_id    TEXT,
       spreadsheet_source        TEXT,
       spreadsheet_path          TEXT,
-      video_duration            TEXT DEFAULT '5',
+      video_duration            TEXT DEFAULT '8',
       video_resolution          TEXT DEFAULT '720p',
       created_at                DATETIME DEFAULT CURRENT_TIMESTAMP
     );
