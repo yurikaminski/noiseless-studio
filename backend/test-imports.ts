@@ -1,0 +1,18 @@
+console.log('1: starting');
+import express from 'express';
+console.log('2: express ok');
+import multer from 'multer';
+console.log('3: multer ok');
+import { initDb } from './db.js';
+console.log('4: db ok');
+import { generateImageFromPrompt } from './services/geminiService.js';
+console.log('5: geminiService ok');
+import { loadOAuthClient } from './services/authService.js';
+console.log('6: authService ok');
+import * as drive from './services/driveService.js';
+console.log('7: driveService ok');
+import { parseXLSX } from './services/xlsxService.js';
+console.log('8: xlsxService ok');
+await initDb();
+console.log('9: initDb ok — ALL GOOD');
+process.exit(0);

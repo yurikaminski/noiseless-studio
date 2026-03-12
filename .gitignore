@@ -1,0 +1,10 @@
+node_modules/
+.env
+credentials/token.json
+uploads/
+dist/
+backend/dist/
+frontend/dist/
+*.db
+*.db-shm
+*.db-wal

@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "/Users/yurikaminski/.nvm/versions/node/v20.14.0/bin/node",
+      "runtimeArgs": ["--import", "/Users/yurikaminski/Desktop/Noiseless Studio/backend/node_modules/tsx/dist/esm/index.mjs", "server.ts"],
+      "cwd": "backend",
+      "port": 3001
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "/Users/yurikaminski/.nvm/versions/node/v20.14.0/bin/npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "frontend",
+      "port": 5173
+    }
+  ]
+}

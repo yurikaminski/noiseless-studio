@@ -1,0 +1,30 @@
+{
+  "name": "noiseless-studio-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch server.ts",
+    "start": "node --experimental-specifier-resolution=node server.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@google/genai": "^1.22.0",
+    "csv-parse": "^5.5.0",
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "google-auth-library": "^9.15.0",
+    "googleapis": "^144.0.0",
+    "multer": "^2.0.2",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^22.14.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2"
+  }
+}
