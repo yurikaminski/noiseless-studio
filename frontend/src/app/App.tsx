@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { History } from './components/History';
 import type { HistoryItem } from './components/History';
 import { MainContent } from './components/MainContent';
-import { Settings } from './components/Settings';
-import { ProjectsView } from './components/ProjectsView';
 import { Clock, Settings2, Zap, LayoutGrid, Video, Image, X, Download } from 'lucide-react';
+
+const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
+const ProjectsView = lazy(() => import('./components/ProjectsView').then(m => ({ default: m.ProjectsView })));
 
 export default function App() {
   const [mode, setMode] = useState<'quick' | 'projects'>('quick');
@@ -44,7 +45,6 @@ export default function App() {
 
   const handleCreationTypeSelect = (type: 'text-to-video' | 'text-to-image' | 'frames-to-video' | 'references-to-video') => {
     setCreationType(type);
-    setShowSettings(true);
   };
 
   function handleHistoryItemClick(item: HistoryItem) {
@@ -140,7 +140,9 @@ export default function App() {
           settings={settings}
         />
       ) : (
-        <ProjectsView />
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center"><div className="w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" /></div>}>
+          <ProjectsView />
+        </Suspense>
       )}
 
       {/* Settings Sidebar - Sliding Panel */}
@@ -150,6 +152,7 @@ export default function App() {
             className="absolute inset-0 bg-black/40 backdrop-blur-sm z-40"
             onClick={() => setShowSettings(false)}
           />
+          <Suspense fallback={null}>
           <Settings
             mode={mode}
             projectPrompt={projectPrompt}
@@ -159,6 +162,7 @@ export default function App() {
             creationType={creationType}
             onClose={() => setShowSettings(false)}
           />
+          </Suspense>
         </>
       )}
 

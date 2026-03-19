@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { Sparkles, Send, Video, Image, Film, Layers, Upload, X, Loader2, Download, RotateCcw } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Sparkles, Send, Video, Image, Upload, X, Loader2, Download, RotateCcw } from 'lucide-react';
 
 interface Settings {
   videoModel: string;
@@ -34,6 +34,8 @@ const STYLE_TAGS = [
   'Watercolor', 'Oil Painting', 'Neon Noir', 'Vintage', 'Sketch',
 ];
 
+type VideoSubMode = 'text-to-video' | 'frames-to-video' | 'references-to-video';
+
 export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSelect, settings }: MainContentProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
@@ -43,17 +45,82 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
   const [startFrame, setStartFrame] = useState<UploadedFile | null>(null);
   const [endFrame, setEndFrame] = useState<UploadedFile | null>(null);
   const [references, setReferences] = useState<UploadedFile[]>([]);
+  const [videoSubMode, setVideoSubMode] = useState<VideoSubMode>('text-to-video');
 
   const startFrameRef = useRef<HTMLInputElement>(null);
   const endFrameRef = useRef<HTMLInputElement>(null);
   const referencesRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const creationTypes = [
-    { id: 'text-to-video', label: 'Text to Video', icon: Video },
-    { id: 'text-to-image', label: 'Text to Image', icon: Image },
-    { id: 'frames-to-video', label: 'Frames to Video', icon: Film },
-    { id: 'references-to-video', label: 'References to Video', icon: Layers },
-  ] as const;
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight}px`;
+  }, [prompt]);
+
+  // Derived state
+  const primaryMode = creationType === 'text-to-image' ? 'image' : (creationType !== null ? 'video' : null);
+  const effectiveCreationType = primaryMode === 'image' ? 'text-to-image' : videoSubMode;
+  const isImage = effectiveCreationType === 'text-to-image';
+
+  function selectPrimaryMode(mode: 'image' | 'video') {
+    if (mode === 'image') {
+      onCreationTypeSelect('text-to-image');
+    } else {
+      setVideoSubMode('text-to-video');
+      onCreationTypeSelect('text-to-video');
+    }
+  }
+
+  function selectVideoSubMode(sub: VideoSubMode) {
+    if (sub === 'frames-to-video') {
+      setReferences([]);
+    } else {
+      setStartFrame(null);
+      setEndFrame(null);
+    }
+    setVideoSubMode(sub);
+    onCreationTypeSelect(sub);
+  }
+
+  async function compressImage(file: File, maxSizeKB = 1200): Promise<File> {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        // Scale down if image is very large
+        const maxDim = 1920;
+        if (width > maxDim || height > maxDim) {
+          const ratio = Math.min(maxDim / width, maxDim / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        // Try quality steps until under maxSizeKB
+        let quality = 0.85;
+        const tryEncode = () => {
+          canvas.toBlob((blob) => {
+            if (!blob) { resolve(file); return; }
+            if (blob.size <= maxSizeKB * 1024 || quality <= 0.4) {
+              resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+            } else {
+              quality -= 0.1;
+              tryEncode();
+            }
+          }, 'image/jpeg', quality);
+        };
+        tryEncode();
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
+  }
 
   function addUploadedFile(file: File): UploadedFile {
     return { file, preview: URL.createObjectURL(file) };
@@ -90,7 +157,7 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
       const res = await fetch('/api/enhance-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, type: creationType || 'text-to-video' }),
+        body: JSON.stringify({ prompt, type: effectiveCreationType }),
       });
       let data: any;
       try { data = await res.json(); } catch { throw new Error('Server returned an invalid response'); }
@@ -114,7 +181,7 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
 
   const canGenerate = (() => {
     if (!prompt.trim()) return false;
-    if (creationType === 'frames-to-video') return !!startFrame;
+    if (effectiveCreationType === 'frames-to-video') return !!startFrame;
     return true;
   })();
 
@@ -127,7 +194,7 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
 
     const fd = new FormData();
     fd.append('prompt', prompt);
-    fd.append('type', creationType || 'text-to-video');
+    fd.append('type', effectiveCreationType);
     fd.append('videoModel', settings.videoModel);
     fd.append('imageModel', settings.imageModel);
     fd.append('aspectRatio', settings.aspectRatio);
@@ -135,17 +202,18 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
     fd.append('generateSound', String(settings.generateSound));
     fd.append('duration', settings.duration);
 
-    if (creationType === 'frames-to-video') {
-      if (startFrame) fd.append('startFrame', startFrame.file);
-      if (endFrame) fd.append('endFrame', endFrame.file);
-    } else if (creationType === 'references-to-video' || creationType === 'text-to-image') {
-      references.forEach(r => fd.append('references', r.file));
+    if (effectiveCreationType === 'frames-to-video') {
+      if (startFrame) fd.append('startFrame', await compressImage(startFrame.file));
+      if (endFrame) fd.append('endFrame', await compressImage(endFrame.file));
+    } else if (effectiveCreationType === 'references-to-video' || effectiveCreationType === 'text-to-image') {
+      for (const r of references) fd.append('references', await compressImage(r.file));
     }
 
     try {
       const res = await fetch('/api/quick-gen', { method: 'POST', body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Generation failed');
+      let data: any;
+      try { data = await res.json(); } catch { throw new Error(res.ok ? 'Server returned an invalid response' : `Server error ${res.status}: ${res.statusText}`); }
+      if (!res.ok) throw new Error(data?.error || 'Generation failed');
       setResult(data);
     } catch (err: any) {
       setError(err.message || 'Unknown error');
@@ -153,8 +221,6 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
       setIsGenerating(false);
     }
   }
-
-  const isImage = creationType === 'text-to-image';
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8 relative z-10 overflow-y-auto">
@@ -175,30 +241,64 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
           </p>
         </div>
 
-        {/* Creation type selector */}
-        <div className="flex items-center justify-center gap-3 flex-wrap">
-          {creationTypes.map((type) => {
-            const Icon = type.icon;
-            const isSelected = creationType === type.id;
-            return (
-              <button
-                key={type.id}
-                onClick={() => onCreationTypeSelect(type.id)}
-                className={`px-5 py-2.5 rounded-full border transition-all flex items-center gap-2 ${
-                  isSelected
-                    ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-500/50 text-white'
-                    : 'bg-white/5 hover:bg-white/10 border-white/10 text-white/60 hover:text-white/90'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span className="text-sm">{type.label}</span>
-              </button>
-            );
-          })}
+        {/* Primary mode selector */}
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-3">
+            {(['image', 'video'] as const).map((mode) => {
+              const isSelected = primaryMode === mode;
+              const Icon = mode === 'image' ? Image : Video;
+              return (
+                <button
+                  key={mode}
+                  onClick={() => selectPrimaryMode(mode)}
+                  className={`px-5 py-2.5 rounded-full border transition-all flex items-center gap-2 ${
+                    isSelected
+                      ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-500/50 text-white'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-white/60 hover:text-white/90'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="text-sm capitalize">{mode}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Video sub-mode row — only shown when Video is selected */}
+          {primaryMode === 'video' && (
+            <div className="flex items-center gap-2 animate-in fade-in duration-200">
+              {([
+                { id: 'text-to-video', label: 'From Text' },
+                { id: 'frames-to-video', label: 'From Frames' },
+                { id: 'references-to-video', label: 'With References' },
+              ] as { id: VideoSubMode; label: string }[]).map(({ id, label }) => {
+                const isActive = videoSubMode === id;
+                const isDisabled =
+                  (id === 'frames-to-video' && references.length > 0) ||
+                  (id === 'references-to-video' && videoSubMode === 'frames-to-video' && (!!startFrame || !!endFrame));
+                return (
+                  <button
+                    key={id}
+                    onClick={() => !isDisabled && selectVideoSubMode(id)}
+                    disabled={isDisabled}
+                    className={`px-3 py-1 rounded-full border text-xs transition-all ${
+                      isActive
+                        ? 'border-white/20 bg-white/5 text-white/70'
+                        : isDisabled
+                          ? 'border-white/5 text-white/20 cursor-not-allowed'
+                          : 'border-white/10 text-white/40 hover:text-white/60 hover:border-white/15 hover:bg-white/5'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Frame uploads for Frames to Video */}
-        {creationType === 'frames-to-video' && (
+        {/* Frame uploads */}
+        {effectiveCreationType === 'frames-to-video' && (
           <div className="grid grid-cols-2 gap-4">
             <FrameUpload
               label="Start Frame"
@@ -218,12 +318,12 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
           </div>
         )}
 
-        {/* Reference images for References to Video / Text to Image */}
-        {(creationType === 'references-to-video' || creationType === 'text-to-image') && (
+        {/* Reference images */}
+        {(effectiveCreationType === 'references-to-video' || effectiveCreationType === 'text-to-image') && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-sm text-white/60">
-                {creationType === 'text-to-image' ? 'Reference images (optional)' : 'Reference images'}
+                {effectiveCreationType === 'text-to-image' ? 'Reference images (optional)' : 'Reference images'}
               </p>
               <button
                 onClick={() => referencesRef.current?.click()}
@@ -259,80 +359,6 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
           </div>
         )}
 
-        {/* Prompt input */}
-        <div className="space-y-3">
-          <div className="relative group">
-            <div className="absolute -inset-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="relative bg-white/5 backdrop-blur-2xl rounded-3xl border border-white/10 p-2 shadow-2xl">
-              <div className="flex items-center gap-3 px-4">
-                <input
-                  type="text"
-                  placeholder={
-                    isImage
-                      ? 'Describe the image you want to create...'
-                      : 'Describe your video in detail...'
-                  }
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && generate()}
-                  className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder:text-white/30 py-4 text-base"
-                  disabled={isGenerating}
-                />
-
-                {/* Send button */}
-                <button
-                  onClick={generate}
-                  disabled={!canGenerate || isGenerating}
-                  className="p-3 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl hover:opacity-90 transition-all shadow-lg hover:shadow-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isGenerating ? (
-                    <Loader2 className="w-5 h-5 text-white animate-spin" />
-                  ) : (
-                    <Send className="w-5 h-5 text-white" />
-                  )}
-                </button>
-
-                {/* Enhance / Revert button */}
-                {originalPrompt !== null ? (
-                  <button
-                    onClick={revertPrompt}
-                    className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-white/50 hover:text-white/80"
-                    title="Revert to original prompt"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                  </button>
-                ) : (
-                  <button
-                    onClick={enhance}
-                    disabled={!prompt.trim() || isEnhancing || isGenerating}
-                    className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 transition-all text-purple-400 hover:text-purple-300 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="Enhance prompt with AI"
-                  >
-                    {isEnhancing ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-4 h-4" />
-                    )}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Style Tags */}
-          <div className="flex flex-wrap gap-2 justify-center px-1">
-            {STYLE_TAGS.map(tag => (
-              <button
-                key={tag}
-                onClick={() => applyStyleTag(tag)}
-                className="px-3 py-1.5 rounded-full border border-white/10 bg-white/5 text-xs text-white/50 hover:bg-purple-500/10 hover:text-white/80 hover:border-purple-500/30 transition-all"
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Loading status */}
         {isGenerating && (
           <div className="flex items-center justify-center gap-3 py-4">
@@ -353,24 +379,21 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
         {/* Result */}
         {result && (
           <div className="space-y-4">
-            <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-white/5">
+            <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-white/5 flex items-center justify-center">
               {result.type === 'image' ? (
-                <img
-                  src={result.url}
-                  alt="Generated"
-                  className="w-full rounded-2xl"
-                />
+                <img src={result.url} alt="Generated" className="max-h-[65vh] w-auto max-w-full object-contain rounded-2xl" />
               ) : (
-                <video
-                  src={result.url}
-                  controls
-                  autoPlay
-                  loop
-                  className="w-full rounded-2xl"
-                />
+                <video src={result.url} controls autoPlay loop className="max-h-[65vh] w-auto max-w-full object-contain rounded-2xl" />
               )}
             </div>
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setResult(null)}
+                className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm text-white/70 hover:bg-white/10 hover:text-white transition-all"
+              >
+                <X className="w-4 h-4" />
+                Fechar
+              </button>
               <a
                 href={result.url}
                 download
@@ -382,6 +405,95 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
             </div>
           </div>
         )}
+
+        {/* Prompt input */}
+        <div className="space-y-3">
+          <div className="relative group">
+            <div className="absolute -inset-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="relative bg-white/5 backdrop-blur-2xl rounded-3xl border border-white/10 p-2 shadow-2xl">
+              <div className="flex items-center gap-3 px-4">
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  placeholder={
+                    isImage
+                      ? 'Describe the image you want to create...'
+                      : 'Describe your video in detail...'
+                  }
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); generate(); } }}
+                  className="flex-1 bg-transparent border-none outline-none text-white/90 placeholder:text-white/30 py-4 text-base resize-none overflow-y-auto max-h-48 leading-relaxed"
+                  style={{ scrollbarWidth: 'thin' }}
+                  disabled={isGenerating}
+                />
+
+                {/* Send button */}
+                <div className="relative group/send">
+                  <button
+                    onClick={generate}
+                    disabled={!canGenerate || isGenerating}
+                    className="p-3 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl hover:opacity-90 transition-all shadow-lg hover:shadow-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {isGenerating ? (
+                      <Loader2 className="w-5 h-5 text-white animate-spin" />
+                    ) : (
+                      <Send className="w-5 h-5 text-white" />
+                    )}
+                  </button>
+                  <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 px-2 py-1 text-xs text-white/80 bg-black/80 rounded-lg border border-white/10 opacity-0 group-hover/send:opacity-100 transition-opacity whitespace-nowrap">
+                    Send
+                  </span>
+                </div>
+
+                {/* Enhance / Revert button */}
+                {originalPrompt !== null ? (
+                  <div className="relative group/revert">
+                    <button
+                      onClick={revertPrompt}
+                      className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-white/50 hover:text-white/80"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                    <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 px-2 py-1 text-xs text-white/80 bg-black/80 rounded-lg border border-white/10 opacity-0 group-hover/revert:opacity-100 transition-opacity whitespace-nowrap">
+                      Revert
+                    </span>
+                  </div>
+                ) : (
+                  <div className="relative group/enhance">
+                    <button
+                      onClick={enhance}
+                      disabled={!prompt.trim() || isEnhancing || isGenerating}
+                      className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 transition-all text-purple-400 hover:text-purple-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isEnhancing ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-4 h-4" />
+                      )}
+                    </button>
+                    <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 px-2 py-1 text-xs text-white/80 bg-black/80 rounded-lg border border-white/10 opacity-0 group-hover/enhance:opacity-100 transition-opacity whitespace-nowrap">
+                      Enhance prompt
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Style Tags */}
+          <div className="flex flex-wrap gap-2 justify-center px-1">
+            {STYLE_TAGS.map(tag => (
+              <button
+                key={tag}
+                onClick={() => applyStyleTag(tag)}
+                className="px-3 py-1.5 rounded-full border border-white/10 bg-white/5 text-xs text-white/50 hover:bg-purple-500/10 hover:text-white/80 hover:border-purple-500/30 transition-all"
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Info */}
         {!result && !isGenerating && !error && (

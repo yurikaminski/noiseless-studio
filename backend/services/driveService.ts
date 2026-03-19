@@ -73,7 +73,7 @@ export async function listImages(
 }
 
 export async function downloadFile(fileId: string, auth: OAuth2Client): Promise<Buffer> {
-  const d = drive(auth);
+  const d = await drive(auth);
   const res = await d.files.get(
     { fileId, alt: 'media' },
     { responseType: 'arraybuffer' }

@@ -129,6 +129,37 @@ User prompt: ${prompt}`;
   return enhanced;
 }
 
+export async function generateScript(ideasNotes: string, apiKey: string): Promise<string> {
+  const ai = getAI(apiKey);
+
+  const metaPrompt = `You are a professional video scriptwriter. Based on the following ideas and notes, write a complete, engaging video script. Include narration text, tone directions, and pacing notes. Format it clearly with sections (Hook, Main Content, CTA, etc.) where appropriate.
+
+Ideas and Notes:
+${ideasNotes}
+
+Return only the script text — no extra commentary, no preamble.`;
+
+  let response: any;
+  try {
+    response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash-lite',
+      contents: { parts: [{ text: metaPrompt }] },
+    } as any);
+  } catch (sdkErr: any) {
+    console.error('[generateScript] SDK error:', sdkErr?.message ?? sdkErr);
+    throw new Error(sdkErr?.message ?? 'Gemini SDK error');
+  }
+
+  const script =
+    response?.text?.trim() ||
+    response?.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text?.trim() ||
+    response?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+  console.log('[generateScript] result length:', script?.length ?? 0);
+  if (!script) throw new Error('No script returned by model');
+  return script;
+}
+
 // Enforce Veo API constraints before calling the API.
 // Returns sanitized { resolution, duration, generateSound }.
 function clampVideoParams(
@@ -165,7 +196,26 @@ function clampVideoParams(
 }
 
 // Generate a video for a scene, return video Buffer
-export async function generateVideoForScene(params: GenerateVideoParams, apiKey: string): Promise<Buffer> {
+export async function generateVideoForScene(params: GenerateVideoParams, apiKey: string, retries = 3): Promise<Buffer> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await _generateVideoForScene(params, apiKey);
+    } catch (err: any) {
+      const is429 = err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED');
+      if (is429 && attempt < retries - 1) {
+        const waitMs = Math.pow(2, attempt) * 15000; // 15s, 30s
+        console.log(`[gemini] rate limit hit, waiting ${waitMs / 1000}s before retry ${attempt + 1}/${retries - 1}...`);
+        await new Promise(r => setTimeout(r, waitMs));
+      } else {
+        if (is429) throw new Error('Quota da API Gemini esgotada. Aguarde alguns minutos (RPM) ou até amanhã (RPD diário) e tente novamente.');
+        throw err;
+      }
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+
+async function _generateVideoForScene(params: GenerateVideoParams, apiKey: string): Promise<Buffer> {
   const ai = getAI(apiKey);
 
   // Apply model-specific constraints before calling the API
@@ -213,7 +263,7 @@ export async function generateVideoForScene(params: GenerateVideoParams, apiKey:
   let operation = await ai.models.generateVideos(payload);
 
   while (!operation.done) {
-    await new Promise(r => setTimeout(r, 10000));
+    await new Promise(r => setTimeout(r, 30000));
     operation = await (ai.operations as any).getVideosOperation({ operation });
   }
 

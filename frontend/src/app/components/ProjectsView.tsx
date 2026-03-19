@@ -5,14 +5,18 @@ import { Plus, Image, Film, FileText, Video, Layers, Clock, Folder, Table2 } fro
 import { KanbanColumn } from './KanbanColumn';
 import { CreateProject } from './CreateProject';
 import { SceneTable } from './SceneTable';
+import { VideoCardModal } from './VideoCardModal';
 
-export interface VideoSegment {
-  id: string;
+export interface VideoCard {
+  id: number;
+  project_id: number;
   title: string;
-  description: string;
-  duration: string;
-  thumbnail?: string;
-  status: string;
+  stage: string;
+  ideas_notes?: string;
+  script?: string;
+  review_notes?: string;
+  published_at?: string | null;
+  created_at: string;
 }
 
 export type ProjectType = 'carousels' | 'storyboard' | 'social-media' | 'text-only' | 'short-videos' | 'long-videos' | 'spreadsheet';
@@ -22,7 +26,6 @@ export interface Project {
   name: string;
   description: string;
   type: ProjectType;
-  segments: VideoSegment[];
   createdAt: string;
   startDate?: string;
   endDate?: string;
@@ -41,23 +44,18 @@ const projectTypes = [
   { id: 'spreadsheet', label: 'Spreadsheet', icon: Table2, color: 'from-teal-500 to-emerald-500' },
 ];
 
+const videoWorkflow = [
+  { id: 'ideas',      title: 'Ideas',      color: 'text-purple-400' },
+  { id: 'script',     title: 'Script',     color: 'text-blue-400'   },
+  { id: 'storyboard', title: 'Storyboard', color: 'text-cyan-400'   },
+  { id: 'generating', title: 'Generating', color: 'text-yellow-400' },
+  { id: 'review',     title: 'Review',     color: 'text-orange-400' },
+  { id: 'published',  title: 'Published',  color: 'text-green-400'  },
+];
+
 const workflows: Record<string, Array<{ id: string; title: string; color: string }>> = {
-  'short-videos': [
-    { id: 'ideas', title: 'Ideas', color: 'text-purple-400' },
-    { id: 'script', title: 'Script', color: 'text-blue-400' },
-    { id: 'storyboard', title: 'Storyboard', color: 'text-cyan-400' },
-    { id: 'scenes', title: 'Scenes', color: 'text-yellow-400' },
-    { id: 'final-edition', title: 'Final Edition', color: 'text-orange-400' },
-    { id: 'ready', title: 'Ready', color: 'text-green-400' }
-  ],
-  'long-videos': [
-    { id: 'ideas', title: 'Ideas', color: 'text-purple-400' },
-    { id: 'script', title: 'Script', color: 'text-blue-400' },
-    { id: 'storyboard', title: 'Storyboard', color: 'text-cyan-400' },
-    { id: 'scenes', title: 'Scenes', color: 'text-yellow-400' },
-    { id: 'final-edition', title: 'Final Edition', color: 'text-orange-400' },
-    { id: 'ready', title: 'Ready', color: 'text-green-400' }
-  ],
+  'short-videos': videoWorkflow,
+  'long-videos': videoWorkflow,
   'carousels': [
     { id: 'concept', title: 'Concept', color: 'text-purple-400' },
     { id: 'design', title: 'Design', color: 'text-blue-400' },
@@ -92,6 +90,8 @@ export function ProjectsView() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [view, setView] = useState<'grid' | 'kanban' | 'scenes' | 'create'>('grid');
   const [loading, setLoading] = useState(true);
+  const [cards, setCards] = useState<VideoCard[]>([]);
+  const [selectedCard, setSelectedCard] = useState<VideoCard | null>(null);
 
   const loadProjects = () => {
     fetch('/api/projects')
@@ -102,7 +102,6 @@ export function ProjectsView() {
           name: p.name,
           description: p.description || '',
           type: (p.type || 'spreadsheet') as ProjectType,
-          segments: [],
           createdAt: new Date(p.created_at).toLocaleDateString(),
           status: 'on-time' as const,
           drive_parent_folder_id: p.drive_parent_folder_id,
@@ -115,23 +114,45 @@ export function ProjectsView() {
 
   useEffect(() => { loadProjects(); }, []);
 
+  const loadCards = (projectId: string | number) => {
+    fetch(`/api/projects/${projectId}/cards`)
+      .then(r => r.json())
+      .then((data: VideoCard[]) => setCards(data))
+      .catch(() => setCards([]));
+  };
+
   const filteredProjects = selectedType === 'all'
     ? projects
     : projects.filter(p => p.type === selectedType);
 
-  const moveSegment = (segmentId: string, newStatus: string) => {
+  const handleAddCard = async (columnId: string) => {
     if (!selectedProject) return;
-    setSelectedProject({
-      ...selectedProject,
-      segments: selectedProject.segments.map(s =>
-        s.id === segmentId ? { ...s, status: newStatus } : s
-      ),
+    await fetch(`/api/projects/${selectedProject.id}/cards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Untitled Video', stage: columnId }),
     });
+    loadCards(selectedProject.id);
+  };
+
+  const handleMoveCard = async (cardId: number, newStage: string) => {
+    await fetch(`/api/cards/${cardId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stage: newStage }),
+    });
+    if (selectedProject) loadCards(selectedProject.id);
   };
 
   const handleProjectClick = (project: Project) => {
     setSelectedProject(project);
-    setView(project.type === 'spreadsheet' ? 'scenes' : 'kanban');
+    if (project.type === 'spreadsheet') {
+      setView('scenes');
+    } else {
+      setCards([]);
+      loadCards(project.id);
+      setView('kanban');
+    }
   };
 
   const handleCreateProject = async (data: any) => {
@@ -179,7 +200,7 @@ export function ProjectsView() {
 
   // ── Kanban view ──
   if (view === 'kanban' && selectedProject) {
-    const columns = workflows[selectedProject.type] || workflows['short-videos'];
+    const columns = workflows[selectedProject.type] || videoWorkflow;
     return (
       <DndProvider backend={HTML5Backend}>
         <div className="flex-1 flex flex-col relative z-10 pt-24 px-8 pb-8">
@@ -214,11 +235,26 @@ export function ProjectsView() {
               <KanbanColumn
                 key={column.id}
                 column={column}
-                segments={selectedProject.segments.filter(s => s.status === column.id)}
-                onMove={moveSegment}
+                cards={cards.filter(c => c.stage === column.id)}
+                onMove={handleMoveCard}
+                onCardClick={setSelectedCard}
+                onAddCard={handleAddCard}
               />
             ))}
           </div>
+
+          {/* Card Modal */}
+          {selectedCard && (
+            <VideoCardModal
+              card={selectedCard}
+              project={selectedProject}
+              onClose={() => {
+                setSelectedCard(null);
+                loadCards(selectedProject.id);
+              }}
+              onStageChange={(cardId, stage) => handleMoveCard(cardId, stage)}
+            />
+          )}
         </div>
       </DndProvider>
     );

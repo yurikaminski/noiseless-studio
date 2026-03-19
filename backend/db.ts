@@ -66,6 +66,45 @@ export async function initDb() {
       error_message      TEXT,
       created_at         DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS video_cards (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      title        TEXT NOT NULL DEFAULT 'Untitled Video',
+      description  TEXT,
+      stage        TEXT NOT NULL DEFAULT 'ideas',
+      ideas_notes  TEXT,
+      script       TEXT,
+      review_notes TEXT,
+      published_at DATETIME,
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS video_card_links (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      card_id    INTEGER NOT NULL REFERENCES video_cards(id) ON DELETE CASCADE,
+      url        TEXT NOT NULL,
+      title      TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS video_card_scenes (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      card_id       INTEGER NOT NULL REFERENCES video_cards(id) ON DELETE CASCADE,
+      order_index   INTEGER NOT NULL DEFAULT 0,
+      description   TEXT,
+      narration     TEXT,
+      start_time    TEXT DEFAULT '00:00',
+      end_time      TEXT DEFAULT '00:00',
+      visual_notes  TEXT,
+      video_prompt  TEXT,
+      frame_a_url   TEXT,
+      frame_b_url   TEXT,
+      video_url     TEXT,
+      status        TEXT DEFAULT 'pending',
+      created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   return db;

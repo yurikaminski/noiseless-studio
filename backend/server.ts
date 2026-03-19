@@ -4,10 +4,10 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { initDb } from './db.js';
+import { initDb, openDb } from './db.js';
 import * as q from './query_db.js';
 import { GenerationMode } from './types.js';
-import { generateImageFromPrompt, generateImage, generateVideoForScene, enhancePrompt } from './services/geminiService.js';
+import { generateImageFromPrompt, generateImage, generateVideoForScene, enhancePrompt, generateScript } from './services/geminiService.js';
 import { loadOAuthClient, getAuthUrl, exchangeCode, getConnectedClient, getConnectedEmail } from './services/authService.js';
 import * as drive from './services/driveService.js';
 import { extractSheetId, readSheets, updateDriveLink } from './services/sheetsService.js';
@@ -522,6 +522,143 @@ app.post('/api/projects/:id/process/batch', async (req, res) => {
   }
 
   sendSSE(String(projectId), 'batch_done', {});
+});
+
+// ── Video Cards ───────────────────────────────────────────────────────────────
+
+app.get('/api/projects/:id/cards', async (req, res) => {
+  const db = await openDb();
+  const cards = await db.all(
+    'SELECT * FROM video_cards WHERE project_id = ? ORDER BY created_at ASC',
+    [Number(req.params.id)]
+  );
+  res.json(cards);
+});
+
+app.post('/api/projects/:id/cards', async (req, res) => {
+  const db = await openDb();
+  const { title = 'Untitled Video', stage = 'ideas' } = req.body;
+  const result = await db.run(
+    'INSERT INTO video_cards (project_id, title, stage) VALUES (?, ?, ?)',
+    [Number(req.params.id), title, stage]
+  );
+  const card = await db.get('SELECT * FROM video_cards WHERE id = ?', [result.lastID]);
+  res.status(201).json(card);
+});
+
+app.get('/api/cards/:id', async (req, res) => {
+  const db = await openDb();
+  const id = Number(req.params.id);
+  const card = await db.get('SELECT * FROM video_cards WHERE id = ?', [id]);
+  if (!card) { res.status(404).json({ error: 'Card not found' }); return; }
+  const links = await db.all('SELECT * FROM video_card_links WHERE card_id = ? ORDER BY created_at ASC', [id]);
+  const scenes = await db.all('SELECT * FROM video_card_scenes WHERE card_id = ? ORDER BY order_index ASC', [id]);
+  res.json({ ...card, links, scenes });
+});
+
+app.put('/api/cards/:id', async (req, res) => {
+  const db = await openDb();
+  const id = Number(req.params.id);
+  const allowed = ['title', 'description', 'stage', 'ideas_notes', 'script', 'review_notes', 'published_at'];
+  const fields = Object.keys(req.body).filter(k => allowed.includes(k));
+  if (fields.length === 0) { res.json({ ok: true }); return; }
+  const setClauses = fields.map(f => `${f} = ?`).join(', ');
+  const values = fields.map(f => req.body[f]);
+  await db.run(
+    `UPDATE video_cards SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [...values, id]
+  );
+  const card = await db.get('SELECT * FROM video_cards WHERE id = ?', [id]);
+  res.json(card);
+});
+
+app.delete('/api/cards/:id', async (req, res) => {
+  const db = await openDb();
+  await db.run('DELETE FROM video_cards WHERE id = ?', [Number(req.params.id)]);
+  res.json({ ok: true });
+});
+
+// ── Card Links ────────────────────────────────────────────────────────────────
+
+app.post('/api/cards/:id/links', async (req, res) => {
+  const db = await openDb();
+  const { url, title = '' } = req.body;
+  if (!url) { res.status(400).json({ error: 'url is required' }); return; }
+  const result = await db.run(
+    'INSERT INTO video_card_links (card_id, url, title) VALUES (?, ?, ?)',
+    [Number(req.params.id), url, title]
+  );
+  const link = await db.get('SELECT * FROM video_card_links WHERE id = ?', [result.lastID]);
+  res.status(201).json(link);
+});
+
+app.delete('/api/cards/links/:linkId', async (req, res) => {
+  const db = await openDb();
+  await db.run('DELETE FROM video_card_links WHERE id = ?', [Number(req.params.linkId)]);
+  res.json({ ok: true });
+});
+
+// ── Card Scenes ───────────────────────────────────────────────────────────────
+
+app.post('/api/cards/:id/scenes', async (req, res) => {
+  const db = await openDb();
+  const cardId = Number(req.params.id);
+  const maxRow = await db.get(
+    'SELECT MAX(order_index) as mx FROM video_card_scenes WHERE card_id = ?', [cardId]
+  );
+  const nextIndex = (maxRow?.mx ?? -1) + 1;
+  const result = await db.run(
+    'INSERT INTO video_card_scenes (card_id, order_index) VALUES (?, ?)',
+    [cardId, nextIndex]
+  );
+  const scene = await db.get('SELECT * FROM video_card_scenes WHERE id = ?', [result.lastID]);
+  res.status(201).json(scene);
+});
+
+app.put('/api/cards/scenes/:sceneId', async (req, res) => {
+  const db = await openDb();
+  const id = Number(req.params.sceneId);
+  const allowed = ['description', 'narration', 'start_time', 'end_time', 'visual_notes',
+    'video_prompt', 'frame_a_url', 'frame_b_url', 'video_url', 'status', 'order_index'];
+  const fields = Object.keys(req.body).filter(k => allowed.includes(k));
+  if (fields.length === 0) { res.json({ ok: true }); return; }
+  const setClauses = fields.map(f => `${f} = ?`).join(', ');
+  const values = fields.map(f => req.body[f]);
+  await db.run(`UPDATE video_card_scenes SET ${setClauses} WHERE id = ?`, [...values, id]);
+  const scene = await db.get('SELECT * FROM video_card_scenes WHERE id = ?', [id]);
+  res.json(scene);
+});
+
+app.delete('/api/cards/scenes/:sceneId', async (req, res) => {
+  const db = await openDb();
+  await db.run('DELETE FROM video_card_scenes WHERE id = ?', [Number(req.params.sceneId)]);
+  res.json({ ok: true });
+});
+
+// ── Generate Script ───────────────────────────────────────────────────────────
+
+app.post('/api/cards/:id/generate-script', async (req, res) => {
+  const db = await openDb();
+  const id = Number(req.params.id);
+  const apiKey = runtimeApiKey || process.env.GEMINI_API_KEY;
+  if (!apiKey) { res.status(400).json({ error: 'API key not configured.' }); return; }
+  const card = await db.get('SELECT ideas_notes FROM video_cards WHERE id = ?', [id]);
+  if (!card) { res.status(404).json({ error: 'Card not found' }); return; }
+  const notesText = (() => {
+    if (!card.ideas_notes) return '';
+    try {
+      const arr = JSON.parse(card.ideas_notes);
+      return Array.isArray(arr) ? arr.map((n: any) => n.text).filter(Boolean).join('\n') : card.ideas_notes;
+    } catch { return card.ideas_notes; }
+  })();
+  if (!notesText.trim()) { res.status(400).json({ error: 'No ideas notes to generate from' }); return; }
+  try {
+    const script = await generateScript(notesText, apiKey);
+    await db.run('UPDATE video_cards SET script = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [script, id]);
+    res.json({ script });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Script generation failed' });
+  }
 });
 
 // ── Global Express error handler (catches async throws in Express 5) ──────────
