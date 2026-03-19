@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, X, Link as LinkIcon } from 'lucide-react';
 import type { VideoCardFull, CardLink } from '../VideoCardModal';
+import { apiFetch } from '../../lib/api';
 
 interface IdeaNote {
   id: string;
@@ -39,7 +40,7 @@ export function IdeasStage({ card, onUpdate }: IdeasStageProps) {
   const [showLinkForm, setShowLinkForm] = useState(false);
 
   const saveNotes = async (updated: IdeaNote[]) => {
-    await fetch(`/api/cards/${card.id}`, {
+    await apiFetch(`/api/cards/${card.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ideas_notes: JSON.stringify(updated) }),
@@ -68,7 +69,7 @@ export function IdeasStage({ card, onUpdate }: IdeasStageProps) {
 
   const addLink = async () => {
     if (!linkUrl.trim()) return;
-    const res = await fetch(`/api/cards/${card.id}/links`, {
+    const res = await apiFetch(`/api/cards/${card.id}/links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: linkUrl.trim(), title: linkTitle.trim() }),
@@ -81,7 +82,7 @@ export function IdeasStage({ card, onUpdate }: IdeasStageProps) {
   };
 
   const deleteLink = async (linkId: number) => {
-    await fetch(`/api/cards/links/${linkId}`, { method: 'DELETE' });
+    await apiFetch(`/api/cards/links/${linkId}`, { method: 'DELETE' });
     setLinks(prev => prev.filter(l => l.id !== linkId));
   };
 

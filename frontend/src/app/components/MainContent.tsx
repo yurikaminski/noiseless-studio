@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Sparkles, Send, Video, Image, Upload, X, Loader2, Download, RotateCcw } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 interface Settings {
   videoModel: string;
@@ -154,7 +155,7 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
     setIsEnhancing(true);
     setError(null);
     try {
-      const res = await fetch('/api/enhance-prompt', {
+      const res = await apiFetch('/api/enhance-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, type: effectiveCreationType }),
@@ -210,7 +211,7 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
     }
 
     try {
-      const res = await fetch('/api/quick-gen', { method: 'POST', body: fd });
+      const res = await apiFetch('/api/quick-gen', { method: 'POST', body: fd });
       let data: any;
       try { data = await res.json(); } catch { throw new Error(res.ok ? 'Server returned an invalid response' : `Server error ${res.status}: ${res.statusText}`); }
       if (!res.ok) throw new Error(data?.error || 'Generation failed');

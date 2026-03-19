@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Plus, Image, Film, FileText, Video, Layers, Clock, Folder, Table2 } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 import { KanbanColumn } from './KanbanColumn';
 import { CreateProject } from './CreateProject';
 import { SceneTable } from './SceneTable';
@@ -94,7 +95,7 @@ export function ProjectsView() {
   const [selectedCard, setSelectedCard] = useState<VideoCard | null>(null);
 
   const loadProjects = () => {
-    fetch('/api/projects')
+    apiFetch('/api/projects')
       .then(r => r.json())
       .then((data: any[]) => {
         setProjects(data.map(p => ({
@@ -115,7 +116,7 @@ export function ProjectsView() {
   useEffect(() => { loadProjects(); }, []);
 
   const loadCards = (projectId: string | number) => {
-    fetch(`/api/projects/${projectId}/cards`)
+    apiFetch(`/api/projects/${projectId}/cards`)
       .then(r => r.json())
       .then((data: VideoCard[]) => setCards(data))
       .catch(() => setCards([]));
@@ -127,7 +128,7 @@ export function ProjectsView() {
 
   const handleAddCard = async (columnId: string) => {
     if (!selectedProject) return;
-    await fetch(`/api/projects/${selectedProject.id}/cards`, {
+    await apiFetch(`/api/projects/${selectedProject.id}/cards`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Untitled Video', stage: columnId }),
@@ -136,7 +137,7 @@ export function ProjectsView() {
   };
 
   const handleMoveCard = async (cardId: number, newStage: string) => {
-    await fetch(`/api/cards/${cardId}`, {
+    await apiFetch(`/api/cards/${cardId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stage: newStage }),
@@ -162,7 +163,7 @@ export function ProjectsView() {
       return;
     }
     try {
-      await fetch('/api/projects', {
+      await apiFetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: data.name, type: data.type, description: data.description }),

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import type { VideoCardFull } from '../VideoCardModal';
+import { apiFetch } from '../../lib/api';
 
 interface ReviewStageProps {
   card: VideoCardFull;
@@ -16,7 +17,7 @@ export function ReviewStage({ card, onUpdate, onMoveToPublished }: ReviewStagePr
   const autoSave = (value: string) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
-      await fetch(`/api/cards/${card.id}`, {
+      await apiFetch(`/api/cards/${card.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ review_notes: value }),

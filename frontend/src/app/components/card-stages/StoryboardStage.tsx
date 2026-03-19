@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, ChevronDown, ChevronRight, Clock, Image as ImageIcon, Sparkles, Wand2, Video, Trash2 } from 'lucide-react';
 import type { VideoCardFull, CardScene } from '../VideoCardModal';
+import { apiFetch } from '../../lib/api';
 
 interface StoryboardStageProps {
   card: VideoCardFull;
@@ -21,7 +22,7 @@ export function StoryboardStage({ card, onUpdate }: StoryboardStageProps) {
   };
 
   const updateSceneField = async (sceneId: number, field: string, value: string) => {
-    await fetch(`/api/cards/scenes/${sceneId}`, {
+    await apiFetch(`/api/cards/scenes/${sceneId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [field]: value }),
@@ -30,13 +31,13 @@ export function StoryboardStage({ card, onUpdate }: StoryboardStageProps) {
   };
 
   const addScene = async () => {
-    const res = await fetch(`/api/cards/${card.id}/scenes`, { method: 'POST' });
+    const res = await apiFetch(`/api/cards/${card.id}/scenes`, { method: 'POST' });
     const newScene = await res.json();
     setScenes(prev => [...prev, newScene]);
   };
 
   const deleteScene = async (sceneId: number) => {
-    await fetch(`/api/cards/scenes/${sceneId}`, { method: 'DELETE' });
+    await apiFetch(`/api/cards/scenes/${sceneId}`, { method: 'DELETE' });
     setScenes(prev => prev.filter(s => s.id !== sceneId));
   };
 

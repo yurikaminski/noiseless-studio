@@ -2,12 +2,16 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { History } from './components/History';
 import type { HistoryItem } from './components/History';
 import { MainContent } from './components/MainContent';
-import { Clock, Settings2, Zap, LayoutGrid, Video, Image, X, Download } from 'lucide-react';
+import { Clock, Settings2, Zap, LayoutGrid, Video, Image, X, Download, LogOut } from 'lucide-react';
+import { apiFetch } from './lib/api';
+import { useAuth, type AuthUser } from './context/AuthContext';
+import { AuthRouter } from './components/auth/AuthRouter';
 
 const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
 const ProjectsView = lazy(() => import('./components/ProjectsView').then(m => ({ default: m.ProjectsView })));
 
-export default function App() {
+// ── Authenticated app shell ────────────────────────────────────────────────────
+function AuthenticatedApp({ user, logout }: { user: AuthUser; logout: () => Promise<void> }) {
   const [mode, setMode] = useState<'quick' | 'projects'>('quick');
   const [prompt, setPrompt] = useState('');
   const [projectPrompt, setProjectPrompt] = useState('');
@@ -28,7 +32,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    fetch('/api/generations')
+    apiFetch('/api/generations')
       .then(r => r.json())
       .then((data: any[]) => {
         setHistoryItems(data.map(g => ({
@@ -88,7 +92,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Floating Action Buttons */}
+      {/* Floating Action Buttons - Top Left */}
       <div className="absolute top-6 left-6 z-50 flex gap-2">
         <button
           onClick={() => setShowHistory(!showHistory)}
@@ -102,7 +106,36 @@ export default function App() {
         </button>
       </div>
 
-      <div className="absolute top-6 right-6 z-50">
+      {/* Top Right: User Menu + Settings */}
+      <div className="absolute top-6 right-6 z-50 flex items-center gap-2">
+        {/* User avatar + dropdown */}
+        <div className="relative group">
+          <button className="p-1.5 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all flex items-center justify-center">
+            {user.avatarUrl
+              ? <img src={user.avatarUrl} alt={user.name || ''} className="w-7 h-7 rounded-xl object-cover" />
+              : <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-purple-500/40 to-pink-500/40 flex items-center justify-center text-xs font-medium text-white/80">
+                  {(user.name || user.email).charAt(0).toUpperCase()}
+                </div>
+            }
+          </button>
+          <div className="absolute right-0 top-full mt-2 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl p-2 w-52 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all">
+            <div className="px-3 py-2 mb-1">
+              <p className="text-sm text-white/80 font-medium truncate">{user.name || 'User'}</p>
+              <p className="text-xs text-white/40 truncate">{user.email}</p>
+            </div>
+            <div className="border-t border-white/10 pt-1">
+              <button
+                onClick={logout}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400/80 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Settings gear */}
         <button
           onClick={() => setShowSettings(!showSettings)}
           className={`p-3 rounded-2xl backdrop-blur-xl border transition-all ${
@@ -130,7 +163,7 @@ export default function App() {
         </>
       )}
 
-      {/* Main Content - Conditional Rendering */}
+      {/* Main Content */}
       {mode === 'quick' ? (
         <MainContent
           prompt={prompt}
@@ -145,7 +178,7 @@ export default function App() {
         </Suspense>
       )}
 
-      {/* Settings Sidebar - Sliding Panel */}
+      {/* Settings Sidebar */}
       {showSettings && (
         <>
           <div
@@ -153,15 +186,15 @@ export default function App() {
             onClick={() => setShowSettings(false)}
           />
           <Suspense fallback={null}>
-          <Settings
-            mode={mode}
-            projectPrompt={projectPrompt}
-            setProjectPrompt={setProjectPrompt}
-            settings={settings}
-            setSettings={setSettings}
-            creationType={creationType}
-            onClose={() => setShowSettings(false)}
-          />
+            <Settings
+              mode={mode}
+              projectPrompt={projectPrompt}
+              setProjectPrompt={setProjectPrompt}
+              settings={settings}
+              setSettings={setSettings}
+              creationType={creationType}
+              onClose={() => setShowSettings(false)}
+            />
           </Suspense>
         </>
       )}
@@ -238,4 +271,19 @@ export default function App() {
       )}
     </div>
   );
+}
+
+// ── Root component (auth gate) ─────────────────────────────────────────────────
+export default function App() {
+  const { user, loading, logout } = useAuth();
+
+  if (loading) return (
+    <div className="size-full flex items-center justify-center bg-[#0a0a0a]">
+      <div className="w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+    </div>
+  );
+
+  if (!user) return <AuthRouter />;
+
+  return <AuthenticatedApp user={user} logout={logout} />;
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { ExternalLink, Loader2, Play, RefreshCw, ImageIcon, Video } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 interface Scene {
   id: number;
@@ -30,7 +31,7 @@ export function SceneTable({ projectId }: SceneTableProps) {
   const loadScenes = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/scenes`);
+      const res = await apiFetch(`/api/projects/${projectId}/scenes`);
       const data = await res.json();
       setScenes(data);
     } catch {
@@ -71,7 +72,7 @@ export function SceneTable({ projectId }: SceneTableProps) {
   const processScene = async (sceneId: number) => {
     setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, processing_status: 'processing' } : s));
     try {
-      const res = await fetch(`/api/scenes/${sceneId}/process`, { method: 'POST' });
+      const res = await apiFetch(`/api/scenes/${sceneId}/process`, { method: 'POST' });
       if (!res.ok) {
         const json = await res.json();
         setScenes(prev => prev.map(s =>
@@ -87,7 +88,7 @@ export function SceneTable({ projectId }: SceneTableProps) {
 
   const processBatch = async (statusFilter: 'Criar imagem' | 'Criar vídeo') => {
     try {
-      await fetch(`/api/projects/${projectId}/process/batch`, {
+      await apiFetch(`/api/projects/${projectId}/process/batch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status_filter: statusFilter }),

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -12,6 +13,9 @@ import { loadOAuthClient, getAuthUrl, exchangeCode, getConnectedClient, getConne
 import * as drive from './services/driveService.js';
 import { extractSheetId, readSheets, updateDriveLink } from './services/sheetsService.js';
 import { parseXLSX, parseCSV } from './services/xlsxService.js';
+import userAuthRouter from './routes/userAuthRoutes.js';
+import orgRouter from './routes/orgRoutes.js';
+import { requireAuth } from './middleware/requireAuth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,6 +31,7 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3001');
 
 app.use(express.json());
+app.use(cookieParser());
 
 // CORS — allow Vercel frontend (and localhost during dev)
 app.use((req, res, next) => {
@@ -60,6 +65,13 @@ const upload = multer({ storage });
 
 // Serve uploaded files
 app.use('/uploads', express.static(uploadsDir));
+
+// ── Public auth routes (no session required) ──────────────────────────────────
+app.use('/api/user', userAuthRouter);
+app.use('/api/org', orgRouter);
+
+// ── Auth wall — everything below requires a valid session ─────────────────────
+app.use(requireAuth);
 
 // ── SSE ───────────────────────────────────────────────────────────────────────
 const sseClients = new Map<string, express.Response[]>();

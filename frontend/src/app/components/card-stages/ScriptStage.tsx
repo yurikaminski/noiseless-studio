@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { Type, Bold, Italic, List, ListOrdered, Link as LinkIcon, Undo, Image as ImageIcon, AlignLeft, MoreHorizontal, Sparkles, Save, Download, Loader2 } from 'lucide-react';
 import type { VideoCardFull } from '../VideoCardModal';
+import { apiFetch } from '../../lib/api';
 
 interface ScriptStageProps {
   card: VideoCardFull;
@@ -19,7 +20,7 @@ export function ScriptStage({ card, onUpdate }: ScriptStageProps) {
   const autoSave = (value: string) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
-      await fetch(`/api/cards/${card.id}`, {
+      await apiFetch(`/api/cards/${card.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ script: value }),
@@ -35,7 +36,7 @@ export function ScriptStage({ card, onUpdate }: ScriptStageProps) {
   const saveNow = async () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setIsSaving(true);
-    await fetch(`/api/cards/${card.id}`, {
+    await apiFetch(`/api/cards/${card.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ script: scriptContent }),
@@ -47,7 +48,7 @@ export function ScriptStage({ card, onUpdate }: ScriptStageProps) {
     if (isGenerating) return;
     setIsGenerating(true);
     try {
-      const res = await fetch(`/api/cards/${card.id}/generate-script`, { method: 'POST' });
+      const res = await apiFetch(`/api/cards/${card.id}/generate-script`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Generation failed');
       setScriptContent(data.script);

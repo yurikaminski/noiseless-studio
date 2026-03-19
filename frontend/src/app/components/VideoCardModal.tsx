@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Maximize2, Minimize2, Lightbulb, FileText, Film, Wand2, Eye, CheckCircle, Calendar } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 import type { VideoCard, Project } from './ProjectsView';
 import { IdeasStage } from './card-stages/IdeasStage';
 import { ScriptStage } from './card-stages/ScriptStage';
@@ -64,7 +65,7 @@ export function VideoCardModal({ card, project, onClose, onStageChange }: VideoC
   const currentStageIndex = workflowStages.findIndex(s => s.id === card.stage);
 
   const loadCard = () => {
-    fetch(`/api/cards/${card.id}`)
+    apiFetch(`/api/cards/${card.id}`)
       .then(r => r.json())
       .then((data: VideoCardFull) => {
         setFullCard(data);
@@ -79,7 +80,7 @@ export function VideoCardModal({ card, project, onClose, onStageChange }: VideoC
 
   const saveTitle = async () => {
     if (title.trim() === card.title) return;
-    await fetch(`/api/cards/${card.id}`, {
+    await apiFetch(`/api/cards/${card.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: title.trim() || 'Untitled Video' }),
@@ -87,7 +88,7 @@ export function VideoCardModal({ card, project, onClose, onStageChange }: VideoC
   };
 
   const handleStageChange = async (newStage: string) => {
-    await fetch(`/api/cards/${card.id}`, {
+    await apiFetch(`/api/cards/${card.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stage: newStage }),

@@ -1,5 +1,7 @@
 import { X, Key, HardDrive, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/api';
+import { OrgSettings } from './OrgSettings';
 
 interface SettingsState {
   videoModel: string;
@@ -37,7 +39,7 @@ export function Settings({
   const [driveStatus, setDriveStatus] = useState<{ connected: boolean; email?: string } | null>(null);
 
   useEffect(() => {
-    fetch('/api/auth/status')
+    apiFetch('/api/auth/status')
       .then(r => r.json())
       .then(setDriveStatus)
       .catch(() => {});
@@ -45,7 +47,7 @@ export function Settings({
 
   const saveApiKey = () => {
     localStorage.setItem('gemini_api_key', apiKey);
-    fetch('/api/config/apikey', {
+    apiFetch('/api/config/apikey', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey }),
@@ -277,6 +279,8 @@ export function Settings({
             </div>
 
             <SystemSection />
+
+            <OrgSettings />
 
             {/* Generation Settings Section */}
             <div className="space-y-6 border-t border-white/10 pt-6">
@@ -747,6 +751,8 @@ export function Settings({
             </div>
 
             <SystemSection />
+
+            <OrgSettings />
 
           </div>
         </div>

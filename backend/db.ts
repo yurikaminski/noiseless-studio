@@ -105,6 +105,47 @@ export async function initDb() {
       status        TEXT DEFAULT 'pending',
       created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS organizations (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL DEFAULT 'Noiseless Studio',
+      domain     TEXT,
+      type       TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id         INTEGER REFERENCES organizations(id),
+      google_id      TEXT UNIQUE,
+      email          TEXT NOT NULL UNIQUE,
+      name           TEXT,
+      avatar_url     TEXT,
+      password_hash  TEXT,
+      email_verified INTEGER NOT NULL DEFAULT 0,
+      role           TEXT NOT NULL DEFAULT 'creator',
+      is_active      INTEGER NOT NULL DEFAULT 1,
+      created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_login_at  DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS email_tokens (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token      TEXT NOT NULL UNIQUE,
+      type       TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used_at    DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS org_access_requests (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      org_id     INTEGER NOT NULL REFERENCES organizations(id),
+      status     TEXT NOT NULL DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   return db;

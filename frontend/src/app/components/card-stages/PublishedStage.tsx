@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { CheckCircle, Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, Maximize } from 'lucide-react';
 import type { VideoCardFull, CardScene } from '../VideoCardModal';
+import { apiFetch } from '../../lib/api';
 
 interface PublishedStageProps {
   card: VideoCardFull;
@@ -9,7 +10,7 @@ interface PublishedStageProps {
 
 export function PublishedStage({ card, onUpdate }: PublishedStageProps) {
   const markPublished = async () => {
-    await fetch(`/api/cards/${card.id}`, {
+    await apiFetch(`/api/cards/${card.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ published_at: new Date().toISOString(), stage: 'published' }),
