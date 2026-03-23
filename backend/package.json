@@ -24,13 +24,13 @@
     "resend": "^6.9.4",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
+    "tsx": "^4.21.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/multer": "^2.0.0",
     "@types/node": "^22.14.0",
-    "tsx": "^4.21.0",
     "typescript": "~5.8.2"
   }
 }
