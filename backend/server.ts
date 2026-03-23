@@ -66,6 +66,9 @@ const upload = multer({ storage });
 // Serve uploaded files
 app.use('/uploads', express.static(uploadsDir));
 
+// ── Health check (public) ─────────────────────────────────────────────────────
+app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
 // ── Public auth routes (no session required) ──────────────────────────────────
 app.use('/api/user', userAuthRouter);
 app.use('/api/org', orgRouter);
