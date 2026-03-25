@@ -7,6 +7,7 @@ import {
 } from '../services/userAuthService.js';
 import {
   sendVerificationEmail, sendAdminAccessRequestEmail, sendAccessApprovedEmail,
+  sendPasswordResetEmail,
 } from '../services/emailService.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { openDb } from '../db.js';
@@ -252,6 +253,56 @@ router.get('/auth/approve-access', async (req, res) => {
       <p style="color:#aaa;">O utilizador <strong>${user.email}</strong> já pode entrar no Noiseless Studio.</p>
     </body></html>
   `);
+});
+
+// ── Forgot / Reset password ───────────────────────────────────────────────────
+
+router.post('/auth/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) { res.status(400).json({ error: 'email is required' }); return; }
+
+  const db = await openDb();
+  const user = await db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()]);
+
+  // Always return ok to avoid user enumeration
+  if (!user || !user.password_hash) { res.json({ ok: true }); return; }
+
+  const token = await createEmailToken(user.id, 'reset_password', 1);
+  await sendPasswordResetEmail(email.toLowerCase(), token);
+
+  res.json({ ok: true });
+});
+
+router.get('/auth/reset-password', async (req, res) => {
+  const { token } = req.query as Record<string, string>;
+  const frontendUrl = process.env.APP_URL || 'http://localhost:5173';
+  if (!token) { res.redirect(`${frontendUrl}?auth_error=invalid_token`); return; }
+
+  // Validate token exists without consuming it yet — redirect to frontend with token
+  const db = await openDb();
+  const record = await db.get(
+    `SELECT * FROM email_tokens WHERE token = ? AND type = 'reset_password' AND used_at IS NULL AND expires_at > datetime('now')`,
+    [token],
+  );
+  if (!record) { res.redirect(`${frontendUrl}?auth_error=invalid_token`); return; }
+
+  res.redirect(`${frontendUrl}?reset_token=${token}`);
+});
+
+router.post('/auth/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) { res.status(400).json({ error: 'token and password are required' }); return; }
+  if (password.length < 8) { res.status(400).json({ error: 'Password must be at least 8 characters' }); return; }
+
+  const result = await consumeEmailToken(token, 'reset_password');
+  if (!result) { res.status(400).json({ error: 'Invalid or expired reset link' }); return; }
+
+  const { hashPassword } = await import('../services/userAuthService.js');
+  const hash = await hashPassword(password);
+  const db = await openDb();
+  await db.run('UPDATE users SET password_hash = ?, email_verified = 1 WHERE id = ?', [hash, result.userId]);
+
+  res.json({ ok: true });
 });
 
 // ── Invite accept ─────────────────────────────────────────────────────────────

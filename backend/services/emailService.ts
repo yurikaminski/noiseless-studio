@@ -10,7 +10,8 @@ const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 const FROM = 'Noiseless Studio <noreply@benoiseless.com>';
 
 export async function sendVerificationEmail(to: string, token: string): Promise<void> {
-  const link = `${APP_URL}/verify-email?token=${token}`;
+  const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+  const link = `${backendUrl}/api/user/auth/verify-email?token=${token}`;
   await getResend().emails.send({
     from: FROM,
     to,
@@ -49,6 +50,26 @@ export async function sendAdminAccessRequestEmail(
           Libere aqui
         </a>
         <p style="color:#555;font-size:12px;margin:24px 0 0;">Se não reconhece este pedido, ignore este email.</p>
+      </div>
+    `,
+  });
+}
+
+export async function sendPasswordResetEmail(to: string, token: string): Promise<void> {
+  const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+  const link = `${backendUrl}/api/user/auth/reset-password?token=${token}`;
+  await getResend().emails.send({
+    from: FROM,
+    to,
+    subject: 'Redefine a tua senha — Noiseless Studio',
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0f0f0f;color:#fff;border-radius:16px;">
+        <h2 style="margin:0 0 16px;font-weight:300;font-size:24px;">Noiseless Studio</h2>
+        <p style="color:#aaa;margin:0 0 24px;">Recebemos um pedido para redefinir a senha da tua conta. Clica no botão abaixo para criar uma nova senha.</p>
+        <a href="${link}" style="display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;text-decoration:none;border-radius:12px;font-size:15px;">
+          Redefinir senha
+        </a>
+        <p style="color:#555;font-size:12px;margin:24px 0 0;">Este link expira em 1 hora. Se não pediste a redefinição, ignora este email.</p>
       </div>
     `,
   });

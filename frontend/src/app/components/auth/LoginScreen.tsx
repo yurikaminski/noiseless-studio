@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 
 interface LoginScreenProps {
   onShowRegister: () => void;
+  onShowForgotPassword?: () => void;
 }
 
 function GoogleIcon() {
@@ -18,7 +19,7 @@ function GoogleIcon() {
   );
 }
 
-export function LoginScreen({ onShowRegister }: LoginScreenProps) {
+export function LoginScreen({ onShowRegister, onShowForgotPassword }: LoginScreenProps) {
   const { refetch } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -127,7 +128,15 @@ export function LoginScreen({ onShowRegister }: LoginScreenProps) {
           </button>
         </form>
 
-        <p className="text-center text-sm text-white/30 mt-6">
+        {onShowForgotPassword && (
+          <p className="text-center mt-4">
+            <button onClick={onShowForgotPassword} className="text-sm text-white/30 hover:text-white/50 transition-colors">
+              Forgot password?
+            </button>
+          </p>
+        )}
+
+        <p className="text-center text-sm text-white/30 mt-4">
           Don't have an account?{' '}
           <button onClick={onShowRegister} className="text-purple-400 hover:text-purple-300 transition-colors">
             Create one

@@ -3,10 +3,11 @@ import { LoginScreen } from './LoginScreen';
 import { RegisterScreen } from './RegisterScreen';
 import { OnboardingScreen } from './OnboardingScreen';
 import { AcceptInviteScreen } from './AcceptInviteScreen';
+import { ResetPasswordScreen } from './ResetPasswordScreen';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
 
-type AuthView = 'login' | 'register';
+type AuthView = 'login' | 'register' | 'forgot';
 
 export function AuthRouter() {
   const { user, refetch } = useAuth();
@@ -14,6 +15,7 @@ export function AuthRouter() {
   const [inviteToken, setInviteToken] = useState<string | null>(
     () => sessionStorage.getItem('pending_invite'),
   );
+  const [resetToken, setResetToken] = useState<string | null>(null);
   const [acceptError, setAcceptError] = useState<string | null>(null);
 
   // Handle redirect states and invite token from URL
@@ -22,13 +24,15 @@ export function AuthRouter() {
     const state = params.get('auth_state');
     const error = params.get('auth_error');
     const invite = params.get('invite');
+    const reset = params.get('reset_token');
 
     if (invite) {
       sessionStorage.setItem('pending_invite', invite);
       setInviteToken(invite);
     }
+    if (reset) setResetToken(reset);
 
-    if (state || error || invite) {
+    if (state || error || invite || reset) {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
@@ -63,6 +67,11 @@ export function AuthRouter() {
     return <OnboardingScreen />;
   }
 
+  // Password reset flow
+  if (!user && resetToken) {
+    return <ResetPasswordScreen token={resetToken} onDone={() => { setResetToken(null); setView('login'); }} />;
+  }
+
   // Not logged in but has invite token → show invite landing
   if (!user && inviteToken) {
     return (
@@ -78,5 +87,9 @@ export function AuthRouter() {
     return <RegisterScreen onShowLogin={() => setView('login')} />;
   }
 
-  return <LoginScreen onShowRegister={() => setView('register')} />;
+  if (view === 'forgot') {
+    return <ResetPasswordScreen token={null} onDone={() => setView('login')} />;
+  }
+
+  return <LoginScreen onShowRegister={() => setView('register')} onShowForgotPassword={() => setView('forgot')} />;
 }
