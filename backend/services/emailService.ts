@@ -1,12 +1,17 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResend() {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) throw new Error('RESEND_API_KEY is not set');
+  return new Resend(key);
+}
+
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 const FROM = 'Noiseless Studio <noreply@noiseless.studio>';
 
 export async function sendVerificationEmail(to: string, token: string): Promise<void> {
   const link = `${APP_URL}/verify-email?token=${token}`;
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM,
     to,
     subject: 'Confirme o seu email — Noiseless Studio',
@@ -29,7 +34,7 @@ export async function sendAdminAccessRequestEmail(
   approveToken: string,
 ): Promise<void> {
   const approveLink = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/user/auth/approve-access?token=${approveToken}`;
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM,
     to: adminEmail,
     subject: `Novo pedido de acesso — ${requesterEmail}`,
@@ -51,7 +56,7 @@ export async function sendAdminAccessRequestEmail(
 
 export async function sendAccessApprovedEmail(to: string): Promise<void> {
   const link = `${APP_URL}`;
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM,
     to,
     subject: 'Acesso aprovado — Noiseless Studio',
