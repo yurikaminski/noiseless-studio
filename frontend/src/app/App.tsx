@@ -2,7 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { History } from './components/History';
 import type { HistoryItem } from './components/History';
 import { MainContent } from './components/MainContent';
-import { Clock, Settings2, Zap, LayoutGrid, Video, Image, X, Download, LogOut } from 'lucide-react';
+import { Clock, Settings2, Zap, LayoutGrid, Video, Image, X, Download, LogOut, Users } from 'lucide-react';
 import { apiFetch } from './lib/api';
 import { useAuth, type AuthUser } from './context/AuthContext';
 import { AuthRouter } from './components/auth/AuthRouter';
@@ -118,11 +118,29 @@ function AuthenticatedApp({ user, logout }: { user: AuthUser; logout: () => Prom
                 </div>
             }
           </button>
-          <div className="absolute right-0 top-full mt-2 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl p-2 w-52 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all">
+          <div className="absolute right-0 top-full mt-2 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl p-2 w-56 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all">
             <div className="px-3 py-2 mb-1">
               <p className="text-sm text-white/80 font-medium truncate">{user.name || 'User'}</p>
               <p className="text-xs text-white/40 truncate">{user.email}</p>
+              <span className={`inline-block mt-1.5 text-[10px] font-medium px-2 py-0.5 rounded-md ${
+                user.role === 'admin'
+                  ? 'bg-yellow-500/15 text-yellow-400/80 border border-yellow-500/20'
+                  : 'bg-white/5 text-white/40 border border-white/10'
+              }`}>
+                {user.role === 'admin' ? 'Admin' : 'Creator'}
+              </span>
             </div>
+            {user.role === 'admin' && (
+              <div className="border-t border-white/10 pt-1 mb-1">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-white/60 hover:text-white/90 hover:bg-white/5 rounded-xl transition-all"
+                >
+                  <Users className="w-4 h-4" />
+                  Team Settings
+                </button>
+              </div>
+            )}
             <div className="border-t border-white/10 pt-1">
               <button
                 onClick={logout}
