@@ -254,6 +254,68 @@ router.get('/auth/approve-access', async (req, res) => {
   `);
 });
 
+// ── Invite accept ─────────────────────────────────────────────────────────────
+
+router.get('/invite-info', async (req, res) => {
+  const { token } = req.query as Record<string, string>;
+  if (!token) { res.status(400).json({ error: 'token is required' }); return; }
+
+  const db = await openDb();
+  const invite = await db.get(
+    `SELECT i.email, i.org_id, o.name as org_name, u.name as inviter_name
+     FROM org_invites i
+     JOIN organizations o ON o.id = i.org_id
+     JOIN users u ON u.id = i.invited_by
+     WHERE i.token = ? AND i.accepted_at IS NULL AND i.expires_at > datetime('now')`,
+    [token],
+  );
+  if (!invite) { res.status(404).json({ error: 'Invite not found or expired' }); return; }
+  res.json({ orgName: invite.org_name, inviterName: invite.inviter_name, email: invite.email });
+});
+
+router.post('/accept-invite', async (req, res) => {
+  const sessionToken = req.cookies?.ns_session;
+  if (!sessionToken) { res.status(401).json({ error: 'Unauthorized' }); return; }
+
+  const { verifySessionJwt } = await import('../services/userAuthService.js');
+  const payload = verifySessionJwt(sessionToken);
+  if (!payload) { res.status(401).json({ error: 'Invalid session' }); return; }
+
+  const { token } = req.body;
+  if (!token) { res.status(400).json({ error: 'token is required' }); return; }
+
+  const db = await openDb();
+  const user = await db.get('SELECT * FROM users WHERE id = ?', [Number(payload.sub)]);
+  if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+  if (user.org_id) { res.status(400).json({ error: 'User already belongs to an organization' }); return; }
+
+  const invite = await db.get(
+    `SELECT * FROM org_invites WHERE token = ? AND accepted_at IS NULL AND expires_at > datetime('now')`,
+    [token],
+  );
+  if (!invite) { res.status(404).json({ error: 'Invite not found or expired' }); return; }
+  if (invite.email.toLowerCase() !== user.email.toLowerCase()) {
+    res.status(403).json({ error: 'This invite was sent to a different email address' }); return;
+  }
+
+  await db.run('UPDATE users SET org_id = ?, is_active = 1 WHERE id = ?', [invite.org_id, user.id]);
+  await db.run("UPDATE org_invites SET accepted_at = datetime('now') WHERE id = ?", [invite.id]);
+
+  const updatedUser = await db.get('SELECT * FROM users WHERE id = ?', [user.id]);
+  const { signSessionJwt } = await import('../services/userAuthService.js');
+  const newToken = signSessionJwt(updatedUser.id, updatedUser.role, updatedUser.org_id);
+  setSessionCookie(res, newToken);
+
+  res.json({
+    id: updatedUser.id,
+    email: updatedUser.email,
+    name: updatedUser.name,
+    avatarUrl: updatedUser.avatar_url,
+    role: updatedUser.role,
+    orgId: updatedUser.org_id,
+  });
+});
+
 // ── Session ────────────────────────────────────────────────────────────────────
 
 router.post('/auth/logout', (_req, res) => {

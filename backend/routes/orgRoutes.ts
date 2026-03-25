@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'crypto';
 import { requireAdmin } from '../middleware/requireAuth.js';
 import { openDb } from '../db.js';
 
@@ -57,6 +58,74 @@ router.delete('/members/:id', requireAdmin, async (req, res) => {
   if (!member) { res.status(404).json({ error: 'User not found in your org' }); return; }
 
   await db.run('UPDATE users SET is_active = 0 WHERE id = ?', [targetId]);
+  res.json({ ok: true });
+});
+
+// POST /api/org/invite — admin sends an invite to an email
+router.post('/invite', requireAdmin, async (req, res) => {
+  const { email } = req.body;
+  if (!email || typeof email !== 'string') {
+    res.status(400).json({ error: 'email is required' }); return;
+  }
+  const normalizedEmail = email.toLowerCase().trim();
+  const db = await openDb();
+
+  const alreadyMember = await db.get(
+    'SELECT id FROM users WHERE email = ? AND org_id = ? AND is_active = 1',
+    [normalizedEmail, req.user!.orgId],
+  );
+  if (alreadyMember) {
+    res.status(400).json({ error: 'User is already a member of your organization' }); return;
+  }
+
+  const existingInvite = await db.get(
+    `SELECT id FROM org_invites WHERE email = ? AND org_id = ? AND accepted_at IS NULL AND expires_at > datetime('now')`,
+    [normalizedEmail, req.user!.orgId],
+  );
+  if (existingInvite) {
+    res.status(400).json({ error: 'A pending invite already exists for this email' }); return;
+  }
+
+  const token = randomUUID();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  await db.run(
+    'INSERT INTO org_invites (org_id, email, token, invited_by, expires_at) VALUES (?, ?, ?, ?, ?)',
+    [req.user!.orgId, normalizedEmail, token, req.user!.id, expiresAt],
+  );
+
+  const org = await db.get('SELECT name FROM organizations WHERE id = ?', [req.user!.orgId]);
+  const inviter = await db.get('SELECT name FROM users WHERE id = ?', [req.user!.id]);
+
+  const { sendInviteEmail } = await import('../services/emailService.js');
+  await sendInviteEmail(normalizedEmail, org.name, token, inviter.name || req.user!.email);
+
+  res.json({ ok: true });
+});
+
+// GET /api/org/invites — list pending invites
+router.get('/invites', requireAdmin, async (req, res) => {
+  const db = await openDb();
+  const invites = await db.all(
+    `SELECT i.id, i.email, i.created_at, i.expires_at, u.name as invited_by_name
+     FROM org_invites i
+     JOIN users u ON u.id = i.invited_by
+     WHERE i.org_id = ? AND i.accepted_at IS NULL AND i.expires_at > datetime('now')
+     ORDER BY i.created_at DESC`,
+    [req.user!.orgId],
+  );
+  res.json(invites);
+});
+
+// DELETE /api/org/invites/:id — revoke invite
+router.delete('/invites/:id', requireAdmin, async (req, res) => {
+  const inviteId = Number(req.params.id);
+  const db = await openDb();
+  const invite = await db.get(
+    'SELECT id FROM org_invites WHERE id = ? AND org_id = ?',
+    [inviteId, req.user!.orgId],
+  );
+  if (!invite) { res.status(404).json({ error: 'Invite not found' }); return; }
+  await db.run('DELETE FROM org_invites WHERE id = ?', [inviteId]);
   res.json({ ok: true });
 });
 

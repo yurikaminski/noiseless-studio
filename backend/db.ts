@@ -146,6 +146,17 @@ export async function initDb() {
       status     TEXT NOT NULL DEFAULT 'pending',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS org_invites (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id      INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      email       TEXT NOT NULL,
+      token       TEXT NOT NULL UNIQUE,
+      invited_by  INTEGER NOT NULL REFERENCES users(id),
+      accepted_at DATETIME,
+      expires_at  DATETIME NOT NULL,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   return db;

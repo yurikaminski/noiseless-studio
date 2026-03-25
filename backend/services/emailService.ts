@@ -7,7 +7,7 @@ function getResend() {
 }
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
-const FROM = 'Noiseless Studio <noreply@noiseless.studio>';
+const FROM = 'Noiseless Studio <noreply@benoiseless.com>';
 
 export async function sendVerificationEmail(to: string, token: string): Promise<void> {
   const link = `${APP_URL}/verify-email?token=${token}`;
@@ -49,6 +49,33 @@ export async function sendAdminAccessRequestEmail(
           Libere aqui
         </a>
         <p style="color:#555;font-size:12px;margin:24px 0 0;">Se não reconhece este pedido, ignore este email.</p>
+      </div>
+    `,
+  });
+}
+
+export async function sendInviteEmail(
+  to: string,
+  orgName: string,
+  token: string,
+  inviterName: string,
+): Promise<void> {
+  const link = `${APP_URL}/?invite=${token}`;
+  await getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `${inviterName} convidou-te para o ${orgName} — Noiseless Studio`,
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0f0f0f;color:#fff;border-radius:16px;">
+        <h2 style="margin:0 0 16px;font-weight:300;font-size:24px;">Noiseless Studio</h2>
+        <p style="color:#aaa;margin:0 0 8px;">
+          <strong style="color:#fff;">${inviterName}</strong> convidou-te para entrar na organização <strong style="color:#fff;">${orgName}</strong>.
+        </p>
+        <p style="color:#aaa;margin:0 0 24px;">Clica no botão abaixo para aceitar o convite e criar a tua conta.</p>
+        <a href="${link}" style="display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;text-decoration:none;border-radius:12px;font-size:15px;">
+          Aceitar convite
+        </a>
+        <p style="color:#555;font-size:12px;margin:24px 0 0;">Este convite expira em 7 dias. Se não reconheces este convite, ignora este email.</p>
       </div>
     `,
   });
