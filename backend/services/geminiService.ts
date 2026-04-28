@@ -197,8 +197,10 @@ function clampVideoParams(
 
 // Generate a video for a scene, return video Buffer
 export async function generateVideoForScene(params: GenerateVideoParams, apiKey: string, retries = 3): Promise<Buffer> {
+  console.log(`[gemini] generateVideoForScene start | model=${params.model} mode=${params.mode} resolution=${params.resolution} duration=${params.duration} aspect=${params.aspectRatio} audio=${params.generateSound} hasStartFrame=${!!params.startFrameBuffer} hasEndFrame=${!!params.endFrameBuffer}`);
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
+      if (attempt > 0) console.log(`[gemini] attempt ${attempt + 1}/${retries}`);
       return await _generateVideoForScene(params, apiKey);
     } catch (err: any) {
       const is429 = err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED');
@@ -207,6 +209,7 @@ export async function generateVideoForScene(params: GenerateVideoParams, apiKey:
         console.log(`[gemini] rate limit hit, waiting ${waitMs / 1000}s before retry ${attempt + 1}/${retries - 1}...`);
         await new Promise(r => setTimeout(r, waitMs));
       } else {
+        console.error(`[gemini] generateVideoForScene failed after ${attempt + 1} attempt(s): ${err?.message}`);
         if (is429) throw new Error('Quota da API Gemini esgotada. Aguarde alguns minutos (RPM) ou até amanhã (RPD diário) e tente novamente.');
         throw err;
       }
@@ -227,6 +230,8 @@ async function _generateVideoForScene(params: GenerateVideoParams, apiKey: strin
     params.mode
   );
 
+  console.log(`[gemini] clamped params | resolution=${clamped.resolution} duration=${clamped.duration}s audio=${clamped.withAudio}`);
+
   const config: any = {
     numberOfVideos: 1,
     resolution: clamped.resolution,
@@ -235,7 +240,7 @@ async function _generateVideoForScene(params: GenerateVideoParams, apiKey: strin
   };
 
   if (clamped.withAudio) {
-    config.withAudio = true;
+    config.generateAudio = true;
   }
 
   const payload: any = {
@@ -250,32 +255,45 @@ async function _generateVideoForScene(params: GenerateVideoParams, apiKey: strin
         imageBytes: params.startFrameBuffer.toString('base64'),
         mimeType: params.startFrameMimeType || 'image/png',
       };
+      console.log(`[gemini] startFrame attached | mimeType=${params.startFrameMimeType} size=${params.startFrameBuffer.length} bytes`);
     }
     if (params.endFrameBuffer) {
-      // The correct field name in @google/genai SDK v1.x is `endImage` (not `lastFrame`)
-      payload.config.endImage = {
+      payload.config.lastFrame = {
         imageBytes: params.endFrameBuffer.toString('base64'),
         mimeType: params.endFrameMimeType || 'image/png',
       };
+      console.log(`[gemini] endFrame (lastFrame) attached | mimeType=${params.endFrameMimeType} size=${params.endFrameBuffer.length} bytes`);
     }
   }
 
+  console.log(`[gemini] calling ai.models.generateVideos | model=${payload.model} prompt="${params.prompt.slice(0, 80)}..."`);
+  const t0 = Date.now();
   let operation = await ai.models.generateVideos(payload);
+  console.log(`[gemini] operation created | name=${(operation as any).name ?? 'unknown'} done=${operation.done} (${Date.now() - t0}ms)`);
 
+  let pollCount = 0;
   while (!operation.done) {
+    pollCount++;
+    const elapsed = Math.round((Date.now() - t0) / 1000);
+    console.log(`[gemini] polling operation | poll #${pollCount} elapsed=${elapsed}s done=${operation.done}`);
     await new Promise(r => setTimeout(r, 30000));
     operation = await (ai.operations as any).getVideosOperation({ operation });
   }
 
+  const totalElapsed = Math.round((Date.now() - t0) / 1000);
+  console.log(`[gemini] operation complete | polls=${pollCount} totalElapsed=${totalElapsed}s`);
+
   // Check for operation-level error (e.g. quota exceeded, policy rejection)
   const opError = (operation as any).error;
   if (opError) {
+    console.error('[gemini] operation returned error:', JSON.stringify(opError));
     throw new Error(`Video generation failed: ${opError.message || JSON.stringify(opError)}`);
   }
 
   const opResponse = operation?.response as any;
   // @google/genai SDK may use either `generatedVideos` or `videos` depending on version
   const videos: any[] = opResponse?.generatedVideos ?? opResponse?.videos ?? [];
+  console.log(`[gemini] response received | videosCount=${videos.length} responseKeys=${Object.keys(opResponse ?? {}).join(',')}`);
 
   if (!videos.length) {
     console.error('[gemini] operation completed with no videos. Full response:', JSON.stringify(opResponse));
@@ -283,12 +301,18 @@ async function _generateVideoForScene(params: GenerateVideoParams, apiKey: strin
   }
 
   const videoUri = videos[0]?.video?.uri;
-  if (!videoUri) throw new Error('Generated video has no URI. Response: ' + JSON.stringify(videos[0]));
+  if (!videoUri) {
+    console.error('[gemini] no URI in video response:', JSON.stringify(videos[0]));
+    throw new Error('Generated video has no URI. Response: ' + JSON.stringify(videos[0]));
+  }
 
+  console.log(`[gemini] fetching video from storage | uri=${videoUri.slice(0, 80)}...`);
   const url = decodeURIComponent(videoUri);
   const res = await fetch(`${url}&key=${apiKey}`);
+  console.log(`[gemini] video fetch response | status=${res.status} contentType=${res.headers.get('content-type')}`);
   if (!res.ok) throw new Error(`Failed to fetch video: ${res.status} ${res.statusText}`);
 
   const arrayBuffer = await res.arrayBuffer();
+  console.log(`[gemini] video downloaded | size=${arrayBuffer.byteLength} bytes (${(arrayBuffer.byteLength / 1024 / 1024).toFixed(1)} MB)`);
   return Buffer.from(arrayBuffer);
 }

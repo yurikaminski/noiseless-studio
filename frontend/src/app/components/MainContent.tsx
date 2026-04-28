@@ -210,17 +210,51 @@ export function MainContent({ prompt, setPrompt, creationType, onCreationTypeSel
       for (const r of references) fd.append('references', await compressImage(r.file));
     }
 
+    console.log(`[generate] submitting | type=${effectiveCreationType} videoModel=${settings.videoModel} resolution=${settings.resolution} duration=${settings.duration} hasStartFrame=${!!startFrame} hasEndFrame=${!!endFrame}`);
+
     try {
       const res = await apiFetch('/api/quick-gen', { method: 'POST', body: fd });
       let data: any;
       try { data = await res.json(); } catch { throw new Error(res.ok ? 'Server returned an invalid response' : `Server error ${res.status}: ${res.statusText}`); }
       if (!res.ok) throw new Error(data?.error || 'Generation failed');
-      setResult(data);
+
+      if (data.jobId) {
+        console.log(`[generate] job created | jobId=${data.jobId} → starting poll`);
+        await pollJobResult(data.jobId);
+      } else {
+        console.log(`[generate] immediate result | type=${data.type} url=${data.url}`);
+        setResult(data);
+      }
     } catch (err: any) {
+      console.error('[generate] error:', err.message);
       setError(err.message || 'Unknown error');
     } finally {
       setIsGenerating(false);
     }
+  }
+
+  async function pollJobResult(jobId: string) {
+    const INTERVAL_MS = 5000;
+    const MAX_WAIT_MS = 15 * 60 * 1000;
+    const start = Date.now();
+    let pollCount = 0;
+
+    while (Date.now() - start < MAX_WAIT_MS) {
+      await new Promise(r => setTimeout(r, INTERVAL_MS));
+      pollCount++;
+      const elapsed = Math.round((Date.now() - start) / 1000);
+      const res = await apiFetch(`/api/quick-gen/status/${jobId}`);
+      const job = await res.json();
+      console.log(`[generate] poll #${pollCount} | jobId=${jobId} status=${job.status} elapsed=${elapsed}s`);
+
+      if (job.status === 'done') {
+        console.log(`[generate] done | url=${job.url} elapsed=${elapsed}s`);
+        setResult({ type: 'video', url: job.url, mimeType: job.mimeType });
+        return;
+      }
+      if (job.status === 'error') throw new Error(job.error || 'Generation failed');
+    }
+    throw new Error('A geração demorou mais do que o esperado. Tente novamente.');
   }
 
   return (

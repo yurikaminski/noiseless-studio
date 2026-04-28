@@ -27,6 +27,10 @@ process.on('unhandledRejection', (reason) => {
 // Runtime-overridable API key (set via /api/config/apikey)
 let runtimeApiKey: string | undefined;
 
+// In-memory job store for async video generation
+interface Job { status: 'pending' | 'done' | 'error'; url?: string; mimeType?: string; error?: string; }
+const jobs = new Map<string, Job>();
+
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001');
 
@@ -166,11 +170,18 @@ app.post('/api/quick-gen', upload.fields([
   } = req.body;
 
   const apiKey = runtimeApiKey || process.env.GEMINI_API_KEY;
+
+  console.log(`[quick-gen] request received | type=${type} videoModel=${videoModel} imageModel=${imageModel} aspectRatio=${aspectRatio} resolution=${resolution} duration=${duration} generateSound=${generateSound}`);
+  console.log(`[quick-gen] files | startFrame=${files?.['startFrame']?.[0]?.size ?? 'none'} bytes endFrame=${files?.['endFrame']?.[0]?.size ?? 'none'} bytes references=${files?.['references']?.length ?? 0}`);
+  console.log(`[quick-gen] prompt | "${prompt?.slice(0, 120)}"`);
+
   if (!apiKey) {
+    console.warn('[quick-gen] rejected: no API key configured');
     res.status(400).json({ error: 'API key not configured. Set it in Settings.' });
     return;
   }
   if (!prompt) {
+    console.warn('[quick-gen] rejected: missing prompt');
     res.status(400).json({ error: 'prompt is required' });
     return;
   }
@@ -183,6 +194,8 @@ app.post('/api/quick-gen', upload.fields([
         mimeType: f.mimetype,
       }));
 
+      console.log(`[quick-gen] image generation start | model=${model} refs=${refs.length}`);
+      const t0 = Date.now();
       const result = await generateImage(
         prompt, apiKey, model,
         aspectRatio || '16:9',
@@ -192,6 +205,7 @@ app.post('/api/quick-gen', upload.fields([
       const ext = result.mimeType.includes('jpeg') ? 'jpg' : 'png';
       const filename = `${Date.now()}-gen.${ext}`;
       fs.writeFileSync(path.join(uploadsDir, filename), result.buffer);
+      console.log(`[quick-gen] image done | file=${filename} size=${result.buffer.length} bytes elapsed=${Date.now() - t0}ms`);
 
       await q.createGeneration(prompt, prompt.slice(0, 60), filename, 'image');
       res.json({ type: 'image', url: `/uploads/${filename}`, mimeType: result.mimeType });
@@ -211,13 +225,22 @@ app.post('/api/quick-gen', upload.fields([
         const ef = files?.['endFrame']?.[0];
         if (sf) { startFrameBuffer = fs.readFileSync(sf.path); startFrameMimeType = sf.mimetype; }
         if (ef) { endFrameBuffer = fs.readFileSync(ef.path); endFrameMimeType = ef.mimetype; }
+        console.log(`[quick-gen] frames-to-video | startFrame=${startFrameBuffer?.length ?? 0} bytes (${startFrameMimeType}) endFrame=${endFrameBuffer?.length ?? 0} bytes (${endFrameMimeType})`);
       } else if (type === 'references-to-video') {
         mode = GenerationMode.REFERENCES_TO_VIDEO;
         const rf = files?.['references']?.[0];
         if (rf) { startFrameBuffer = fs.readFileSync(rf.path); startFrameMimeType = rf.mimetype; }
+        console.log(`[quick-gen] references-to-video | ref=${startFrameBuffer?.length ?? 0} bytes (${startFrameMimeType})`);
+      } else {
+        console.log(`[quick-gen] text-to-video | model=${model}`);
       }
 
-      const videoBuffer = await generateVideoForScene({
+      const jobId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      jobs.set(jobId, { status: 'pending' });
+      console.log(`[quick-gen] job created | jobId=${jobId} → responding immediately`);
+      res.json({ jobId });
+
+      const videoParams = {
         prompt,
         model: model as any,
         aspectRatio: (aspectRatio || '16:9') as any,
@@ -229,18 +252,44 @@ app.post('/api/quick-gen', upload.fields([
         endFrameBuffer,
         endFrameMimeType,
         generateSound: generateSound === 'true',
-      }, apiKey);
+      };
 
-      const filename = `${Date.now()}-gen.mp4`;
-      fs.writeFileSync(path.join(uploadsDir, filename), videoBuffer);
-
-      await q.createGeneration(prompt, prompt.slice(0, 60), filename, 'video');
-      res.json({ type: 'video', url: `/uploads/${filename}`, mimeType: 'video/mp4' });
+      const jobStart = Date.now();
+      generateVideoForScene(videoParams, apiKey).then(async (videoBuffer) => {
+        const filename = `${Date.now()}-gen.mp4`;
+        fs.writeFileSync(path.join(uploadsDir, filename), videoBuffer);
+        await q.createGeneration(prompt, prompt.slice(0, 60), filename, 'video');
+        const elapsed = Math.round((Date.now() - jobStart) / 1000);
+        console.log(`[quick-gen] job done | jobId=${jobId} file=${filename} size=${videoBuffer.length} bytes elapsed=${elapsed}s`);
+        jobs.set(jobId, { status: 'done', url: `/uploads/${filename}`, mimeType: 'video/mp4' });
+        setTimeout(() => { console.log(`[quick-gen] job expired | jobId=${jobId}`); jobs.delete(jobId); }, 10 * 60 * 1000);
+      }).catch((err: any) => {
+        const elapsed = Math.round((Date.now() - jobStart) / 1000);
+        console.error(`[quick-gen] job failed | jobId=${jobId} elapsed=${elapsed}s error=${err.message}`);
+        jobs.set(jobId, { status: 'error', error: err.message || 'Generation failed' });
+        setTimeout(() => jobs.delete(jobId), 10 * 60 * 1000);
+      });
     }
   } catch (err: any) {
     console.error('[quick-gen] error:', err);
     res.status(500).json({ error: err.message || 'Generation failed' });
   }
+});
+
+// ── Quick Gen Status ──────────────────────────────────────────────────────────
+app.get('/api/quick-gen/status/:jobId', (req, res) => {
+  const { jobId } = req.params;
+  const job = jobs.get(jobId);
+  if (!job) {
+    console.warn(`[quick-gen/status] jobId=${jobId} not found or expired`);
+    res.status(404).json({ error: 'Job not found or expired' });
+    return;
+  }
+  // Only log transitions (done/error), not every pending poll to avoid Railway log spam
+  if (job.status !== 'pending') {
+    console.log(`[quick-gen/status] jobId=${jobId} status=${job.status}${job.url ? ` url=${job.url}` : ''}${job.error ? ` error=${job.error}` : ''}`);
+  }
+  res.json(job);
 });
 
 // ── Auth (Google Drive / Sheets) ─────────────────────────────────────────────
