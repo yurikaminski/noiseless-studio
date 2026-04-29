@@ -239,9 +239,8 @@ async function _generateVideoForScene(params: GenerateVideoParams, apiKey: strin
     aspectRatio: params.aspectRatio,
   };
 
-  if (clamped.withAudio) {
-    config.generateAudio = true;
-  }
+  // generateAudio is only supported on Vertex AI, not on the Gemini Developer API.
+  // Veo 3.x generates audio automatically on models that support it — no parameter needed.
 
   const payload: any = {
     model: params.model,
